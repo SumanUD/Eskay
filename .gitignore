@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+*.log
+.DS_Store
+.playwright-mcp
+manufactt-full.png
+industrious-full.png
+
+.vercel
+.env*
+!.env.example
