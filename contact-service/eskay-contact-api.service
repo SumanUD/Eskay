@@ -1,0 +1,22 @@
+[Unit]
+Description=ESKAY contact form mail API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eskay-mailer
+Group=eskay-mailer
+WorkingDirectory=/opt/eskay-contact-api
+EnvironmentFile=/etc/eskay-contact-api.env
+ExecStart=/usr/bin/node /opt/eskay-contact-api/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/eskay-contact-api
+
+[Install]
+WantedBy=multi-user.target

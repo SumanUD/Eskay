@@ -22,6 +22,8 @@ const supportTypes = [
   { title: "Business support", copy: "Dealer, distributor, vendor and other business-related enquiries.", icon: "business" },
 ];
 
+const contactEndpoint = process.env.NEXT_PUBLIC_CONTACT_API_URL ?? "https://contact-api.eskaylife.com/v1/contact";
+
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -128,7 +130,7 @@ export default function Home() {
     setFormState("submitting");
 
     try {
-      const response = await fetch("/api/contact", {
+      const response = await fetch(contactEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -297,8 +299,8 @@ export default function Home() {
             <form id="enquiry-form" onSubmit={submitEnquiry}>
               <label><span>Full name</span><input name="name" type="text" autoComplete="name" required /></label>
               <label><span>Organisation</span><input name="organisation" type="text" autoComplete="organization" /></label>
-              <label><span>Work email</span><input name="email" type="email" autoComplete="email" required /></label>
-              <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" /></label>
+              <label><span>Work email</span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
+              <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+() -]{7,20}" maxLength={20} title="Enter a valid phone number with 7 to 15 digits." /></label>
               <label className="wide"><span>Enquiry type</span><select name="type" defaultValue="" required><option value="" disabled>Select one</option><option>Corporate enquiry</option><option>Dealer or distributor enquiry</option><option>Customer care</option><option>Other business enquiry</option></select></label>
               <label className="wide"><span>Your message</span><textarea name="message" rows={5} required /></label>
               <label className="consent wide"><input name="consent" type="checkbox" required /><span>I agree that ESKAY may use these details to respond to my enquiry.</span></label>
