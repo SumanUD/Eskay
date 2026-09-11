@@ -71,7 +71,7 @@ async function contact(request, response, origin) {
   const phoneDigits = phone.replace(/\D/g, "");
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const phoneValid = !phone || (/^[0-9+() -]+$/.test(phone) && phoneDigits.length >= 7 && phoneDigits.length <= 15);
-  if (name.length < 2 || !emailValid || !phoneValid || !enquiryTypes.has(type) || message.length < 10 || payload.consent !== true) return json(response, 400, { error: "Please check the form and try again." }, origin);
+  if (name.length < 2 || !emailValid || !phoneValid || !enquiryTypes.has(type) || message.length < 3 || payload.consent !== true) return json(response, 400, { error: "Please check the form and try again." }, origin);
 
   const safe = { name: escapeHtml(name), organisation: escapeHtml(organisation || "Not provided"), email: escapeHtml(email), phone: escapeHtml(phone || "Not provided"), type: escapeHtml(type), message: escapeHtml(message).replace(/\n/g, "<br />") };
   try {
