@@ -22,7 +22,7 @@ const supportTypes = [
   { title: "Business support", copy: "Dealer, distributor, vendor and other business-related enquiries.", icon: "business" },
 ];
 
-const contactEndpoint = process.env.NEXT_PUBLIC_CONTACT_API_URL ?? "https://contact-api.eskaylife.com/v1/contact";
+const contactEndpoint = process.env.NEXT_PUBLIC_CONTACT_API_URL ?? "https://eskay.sumitkumardas.xyz/v1/contact";
 
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return (
