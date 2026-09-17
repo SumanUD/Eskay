@@ -10,6 +10,7 @@ const config = {
   origins: new Set((process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()).filter(Boolean)),
   smtpPort: Number(process.env.SMTP_PORT ?? 465),
   rateMax: Number(process.env.RATE_LIMIT_MAX ?? 5),
+  rateBurst: Number(process.env.RATE_LIMIT_BURST ?? 40),
   rateWindow: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 900000),
 };
 if (!config.origins.size || !Number.isInteger(config.port) || !Number.isInteger(config.smtpPort)) throw new Error("Invalid service configuration");
@@ -50,18 +51,29 @@ function readBody(request) {
     request.on("error", reject);
   });
 }
-function isRateLimited(request) {
-  const address = (request.headers["x-forwarded-for"]?.split(",")[0]?.trim() || request.socket.remoteAddress || "unknown").slice(0, 100);
+// nginx sets X-Forwarded-For with $proxy_add_x_forwarded_for, which APPENDS the peer address,
+// so the last entry is the one our own proxy added; earlier entries are client-supplied and spoofable.
+function clientAddress(request) {
+  return (request.headers["x-forwarded-for"]?.split(",").pop()?.trim() || request.socket.remoteAddress || "unknown").slice(0, 100);
+}
+// Two budgets per address: `sent` caps delivered mail (the expensive action), `seen` caps raw
+// requests. Rejected submissions only spend `seen`, so correcting a form never locks the sender out.
+function quotaFor(request) {
+  const address = clientAddress(request);
   const now = Date.now(); const previous = attempts.get(address);
-  if (!previous || now - previous.startedAt > config.rateWindow) { attempts.set(address, { startedAt: now, count: 1 }); return false; }
-  previous.count += 1; return previous.count > config.rateMax;
+  if (previous && now - previous.startedAt <= config.rateWindow) return previous;
+  const fresh = { startedAt: now, seen: 0, sent: 0 };
+  attempts.set(address, fresh);
+  return fresh;
 }
 setInterval(() => { const oldest = Date.now() - config.rateWindow; for (const [ip, item] of attempts) if (item.startedAt < oldest) attempts.delete(ip); }, config.rateWindow).unref();
 
 async function contact(request, response, origin) {
   if (!config.origins.has(origin)) return json(response, 403, { error: "Forbidden origin." }, origin);
   if (request.headers["content-type"]?.split(";")[0] !== "application/json") return json(response, 415, { error: "Unsupported content type." }, origin);
-  if (isRateLimited(request)) return json(response, 429, { error: "Too many requests. Please try again later." }, origin);
+  const quota = quotaFor(request);
+  if (quota.sent >= config.rateMax || quota.seen >= config.rateBurst) return json(response, 429, { error: "Too many requests. Please try again later." }, origin);
+  quota.seen += 1;
   let payload;
   try { payload = JSON.parse(await readBody(request)); } catch (error) { return json(response, error.message === "too_large" ? 413 : 400, { error: "Invalid request." }, origin); }
   if (clean(payload.website, 200)) return json(response, 200, { ok: true }, origin);
@@ -79,6 +91,7 @@ async function contact(request, response, origin) {
       transporter.sendMail({ from: `"ESKAY Website" <${process.env.SMTP_USER}>`, to: process.env.ADMIN_EMAIL, replyTo: email, subject: `[ESKAY Website] ${type} — ${name.replace(/[\r\n]/g, " ")}`, text: `New ESKAY website enquiry\n\nName: ${name}\nOrganisation: ${organisation || "Not provided"}\nEmail: ${email}\nPhone: ${phone || "Not provided"}\nEnquiry type: ${type}\n\nMessage:\n${message}`, html: emailShell(`<h1 style="margin:0 0 10px;font-family:Georgia,serif;font-size:28px">New website enquiry</h1><p style="margin:0 0 24px;color:#6a635c;font-size:14px">A new message was submitted through the ESKAY contact form.</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;line-height:1.6"><tr><td style="padding:8px 0;color:#7b736b;width:135px">Name</td><td style="padding:8px 0;font-weight:700">${safe.name}</td></tr><tr><td style="padding:8px 0;color:#7b736b">Organisation</td><td style="padding:8px 0">${safe.organisation}</td></tr><tr><td style="padding:8px 0;color:#7b736b">Email</td><td style="padding:8px 0"><a href="mailto:${safe.email}" style="color:#b51119">${safe.email}</a></td></tr><tr><td style="padding:8px 0;color:#7b736b">Phone</td><td style="padding:8px 0">${safe.phone}</td></tr><tr><td style="padding:8px 0;color:#7b736b">Enquiry type</td><td style="padding:8px 0">${safe.type}</td></tr></table><div style="margin-top:22px;padding:18px;border-left:3px solid #d6a63b;background:#faf7f1;font-size:14px;line-height:1.7">${safe.message}</div>`) }),
       transporter.sendMail({ from: `"ESKAY" <${process.env.SMTP_USER}>`, to: email, replyTo: process.env.ADMIN_EMAIL, subject: "We received your enquiry | ESKAY", text: `Dear ${name},\n\nThank you for contacting ESKAY. We have received your ${type.toLowerCase()} and it has been directed to the appropriate team.\n\nWe will respond using the contact details you provided.\n\nRegards,\nESKAY`, html: emailShell(`<p style="margin:0 0 8px;color:#b51119;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Enquiry received</p><h1 style="margin:0 0 18px;font-family:Georgia,serif;font-size:30px">Thank you, ${safe.name}.</h1><p style="margin:0 0 14px;color:#5f5852;font-size:15px;line-height:1.7">We have received your <strong>${safe.type.toLowerCase()}</strong> and directed it to the appropriate ESKAY team.</p><p style="margin:0;color:#5f5852;font-size:15px;line-height:1.7">We will respond using the contact details you provided.</p>`) }),
     ]);
+    quota.sent += 1;
     return json(response, 200, { ok: true }, origin);
   } catch (error) {
     console.error("SMTP delivery failed", { code: error?.code, command: error?.command, responseCode: error?.responseCode });
@@ -92,4 +105,4 @@ createServer(async (request, response) => {
   if (request.method === "OPTIONS" && url.pathname === "/v1/contact") { if (!config.origins.has(origin)) return json(response, 403, { error: "Forbidden origin." }, origin); setCors(response, origin); response.writeHead(204); return response.end(); }
   if (request.method === "POST" && url.pathname === "/v1/contact") return contact(request, response, origin);
   return json(response, 404, { error: "Not found." }, origin);
-}).listen(config.port, config.host, () => console.log(`ESKAY contact API listening on ${config.host}:${config.port}`));
+}).listen(config.port, config.host, () => console.log(`ESKAY contact API listening on ${config.host}:${config.port}; allowed origins: ${[...config.origins].join(", ")}`));

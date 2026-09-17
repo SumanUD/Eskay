@@ -47,6 +47,7 @@ function LineIcon({ type }: { type: string }) {
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [formState, setFormState] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [formError, setFormError] = useState("");
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -127,6 +128,7 @@ export default function Home() {
     const form = event.currentTarget;
     const formData = new FormData(form);
 
+    setFormError("");
     setFormState("submitting");
 
     try {
@@ -145,11 +147,19 @@ export default function Home() {
         }),
       });
 
-      if (!response.ok) throw new Error("Unable to submit enquiry");
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => null)) as { error?: string } | null;
+        setFormError(response.status === 429
+          ? "You have sent several enquiries recently. Please wait a few minutes before trying again."
+          : detail?.error ?? "We could not send your enquiry. Please check your details and try again shortly.");
+        setFormState("error");
+        return;
+      }
 
       form.reset();
       setFormState("success");
     } catch {
+      setFormError("We could not reach the server. Please check your connection and try again.");
       setFormState("error");
     }
   }
@@ -300,7 +310,7 @@ export default function Home() {
               <label><span>Full name</span><input name="name" type="text" autoComplete="name" required /></label>
               <label><span>Organisation</span><input name="organisation" type="text" autoComplete="organization" /></label>
               <label><span>Work email</span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
-              <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+() -]{7,20}" maxLength={20} title="Enter a valid phone number with 7 to 15 digits." /></label>
+              <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+\(\)\- ]{7,20}" maxLength={20} title="Enter a valid phone number with 7 to 15 digits." /></label>
               <label className="wide"><span>Enquiry type</span><select name="type" defaultValue="" required><option value="" disabled>Select one</option><option>Corporate enquiry</option><option>Dealer or distributor enquiry</option><option>Customer care</option><option>Other business enquiry</option></select></label>
               <label className="wide"><span>Your message</span><textarea name="message" rows={5} required /></label>
               <label className="consent wide"><input name="consent" type="checkbox" required /><span>I agree that ESKAY may use these details to respond to my enquiry.</span></label>
@@ -309,7 +319,7 @@ export default function Home() {
               <p className={formState === "idle" ? "form-status wide" : formState === "error" ? "form-status is-visible is-error wide" : "form-status is-visible wide"} role="status" aria-live="polite">
                 {formState === "submitting" && "Sending your enquiry securely…"}
                 {formState === "success" && "Thank you. Your enquiry has been sent, and a confirmation is on its way to your email."}
-                {formState === "error" && "We could not send your enquiry. Please check your details and try again shortly."}
+                {formState === "error" && formError}
               </p>
             </form>
           </div>
