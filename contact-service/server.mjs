@@ -83,7 +83,10 @@ async function contact(request, response, origin) {
   const phoneDigits = phone.replace(/\D/g, "");
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const phoneValid = /^[0-9+() -]+$/.test(phone) && phoneDigits.length >= 7 && phoneDigits.length <= 15;
-  if (name.length < 2 || organisation.length < 2 || !emailValid || !phoneValid || !enquiryTypes.has(type) || message.length < 3 || payload.consent !== true) return json(response, 400, { error: "Please check the form and try again." }, origin);
+  // Letters in any script plus the separators real names carry (S. K. Das, D'Souza, Anne-Marie);
+  // digits and symbols are refused. U+2019 is allowed because phones autocorrect ' into it.
+  const nameValid = /^[\p{L}\p{M}][\p{L}\p{M} '’\-.]{1,99}$/u.test(name);
+  if (!nameValid || organisation.length < 2 || !emailValid || !phoneValid || !enquiryTypes.has(type) || message.length < 3 || payload.consent !== true) return json(response, 400, { error: "Please check the form and try again." }, origin);
 
   const safe = { name: escapeHtml(name), organisation: escapeHtml(organisation || "Not provided"), email: escapeHtml(email), phone: escapeHtml(phone || "Not provided"), type: escapeHtml(type), message: escapeHtml(message).replace(/\n/g, "<br />") };
   try {

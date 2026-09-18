@@ -24,13 +24,17 @@ const supportTypes = [
 
 const contactEndpoint = process.env.NEXT_PUBLIC_CONTACT_API_URL ?? "https://eskay.sumitkumardas.xyz/v1/contact";
 
-// `pattern` only blocks submission, it never stops the keystroke, so the field would still
-// show letters until the user pressed send. Drop anything the server would reject as it is typed.
-function stripPhoneInput(event: FormEvent<HTMLInputElement>) {
+// `pattern` only blocks submission, it never stops the keystroke, so a field would still show
+// rejected characters until the user pressed send. Drop them as they are typed instead.
+function filterInput(event: FormEvent<HTMLInputElement>, disallowed: RegExp) {
   const input = event.currentTarget;
-  const cleaned = input.value.replace(/[^0-9+() -]/g, "");
+  const cleaned = input.value.replace(disallowed, "");
   if (cleaned !== input.value) input.value = cleaned;
 }
+const stripPhoneInput = (event: FormEvent<HTMLInputElement>) => filterInput(event, /[^0-9+() -]/g);
+// Names are letters in any script, plus the separators real names actually carry: S. K. Das,
+// D'Souza, Anne-Marie. U+2019 is included because iOS and Word autocorrect ' into it.
+const stripNameInput = (event: FormEvent<HTMLInputElement>) => filterInput(event, /[^\p{L}\p{M} '’\-.]/gu);
 
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return (
@@ -315,7 +319,7 @@ export default function Home() {
               <p className="compliance-chip">Corporate information only</p>
             </aside>
             <form id="enquiry-form" onSubmit={submitEnquiry}>
-              <label><span>Full name<b className="req" aria-hidden="true">*</b></span><input name="name" type="text" autoComplete="name" minLength={2} required /></label>
+              <label><span>Full name<b className="req" aria-hidden="true">*</b></span><input name="name" type="text" autoComplete="name" minLength={2} maxLength={100} required pattern="[\p{L}\p{M}][\p{L}\p{M} '’\-.]{1,99}" title="Letters, spaces, apostrophes, hyphens and full stops only." onInput={stripNameInput} /></label>
               <label><span>Organisation<b className="req" aria-hidden="true">*</b></span><input name="organisation" type="text" autoComplete="organization" minLength={2} maxLength={120} required /></label>
               <label><span>Work email<b className="req" aria-hidden="true">*</b></span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
               <label><span>Phone number<b className="req" aria-hidden="true">*</b></span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+\(\)\- ]{7,20}" maxLength={20} required title="Enter a valid phone number with 7 to 15 digits." onInput={stripPhoneInput} /></label>

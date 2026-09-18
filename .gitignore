@@ -2,6 +2,7 @@ node_modules
 .next
 out
 *.log
+tsconfig.tsbuildinfo
 .DS_Store
 .playwright-mcp
 manufactt-full.png
