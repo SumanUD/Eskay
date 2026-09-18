@@ -31,7 +31,21 @@ function filterInput(event: FormEvent<HTMLInputElement>, disallowed: RegExp) {
   const cleaned = input.value.replace(disallowed, "");
   if (cleaned !== input.value) input.value = cleaned;
 }
-const stripPhoneInput = (event: FormEvent<HTMLInputElement>) => filterInput(event, /[^0-9+() -]/g);
+// An Indian number is 10 digits. A +91 country code and a leading trunk 0 are prefixes around
+// that number, not part of it, so they are discounted before the 10 digits are counted.
+function significantPhoneDigits(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits;
+}
+// `pattern` cannot count digits separated by spaces or hyphens, so the length rule is a custom
+// validity message instead; the browser blocks submission on it exactly as it would on a pattern.
+function handlePhoneInput(event: FormEvent<HTMLInputElement>) {
+  filterInput(event, /[^0-9+() -]/g);
+  const input = event.currentTarget;
+  input.setCustomValidity(significantPhoneDigits(input.value).length === 10 ? "" : "Enter a 10-digit phone number.");
+}
 // Names are letters in any script, plus the separators real names actually carry: S. K. Das,
 // D'Souza, Anne-Marie. U+2019 is included because iOS and Word autocorrect ' into it.
 const stripNameInput = (event: FormEvent<HTMLInputElement>) => filterInput(event, /[^\p{L}\p{M} '’\-.]/gu);
@@ -322,7 +336,7 @@ export default function Home() {
               <label><span>Full name<b className="req" aria-hidden="true">*</b></span><input name="name" type="text" autoComplete="name" minLength={2} maxLength={100} required pattern="[\p{L}\p{M}][\p{L}\p{M} '’\-.]{1,99}" title="Letters, spaces, apostrophes, hyphens and full stops only." onInput={stripNameInput} /></label>
               <label><span>Organisation<b className="req" aria-hidden="true">*</b></span><input name="organisation" type="text" autoComplete="organization" minLength={2} maxLength={120} required /></label>
               <label><span>Work email<b className="req" aria-hidden="true">*</b></span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
-              <label><span>Phone number<b className="req" aria-hidden="true">*</b></span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+\(\)\- ]{7,20}" maxLength={20} required title="Enter a valid phone number with 7 to 15 digits." onInput={stripPhoneInput} /></label>
+              <label><span>Phone number<b className="req" aria-hidden="true">*</b></span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+\(\)\- ]{10,20}" maxLength={20} required title="Enter a 10-digit phone number." onInput={handlePhoneInput} /></label>
               <label className="wide"><span>Enquiry type<b className="req" aria-hidden="true">*</b></span><select name="type" defaultValue="" required><option value="" disabled>Select one</option><option>Corporate enquiry</option><option>Dealer or distributor enquiry</option><option>Customer care</option><option>Other business enquiry</option></select></label>
               <label className="wide"><span>Your message<b className="req" aria-hidden="true">*</b></span><textarea name="message" rows={5} minLength={3} required /></label>
               <label className="consent wide"><input name="consent" type="checkbox" required /><span>I agree that ESKAY may use these details to respond to my enquiry.<b className="req" aria-hidden="true">*</b></span></label>

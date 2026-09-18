@@ -80,9 +80,13 @@ async function contact(request, response, origin) {
 
   const name = clean(payload.name, 100), organisation = clean(payload.organisation, 120), email = clean(payload.email, 254).toLowerCase();
   const phone = clean(payload.phone, 32), type = clean(payload.type, 80), message = clean(payload.message, 3000);
-  const phoneDigits = phone.replace(/\D/g, "");
+  const rawPhoneDigits = phone.replace(/\D/g, "");
+  // A +91 country code or a leading trunk 0 wraps the 10-digit number rather than extending it.
+  const phoneDigits = rawPhoneDigits.length === 12 && rawPhoneDigits.startsWith("91") ? rawPhoneDigits.slice(2)
+    : rawPhoneDigits.length === 11 && rawPhoneDigits.startsWith("0") ? rawPhoneDigits.slice(1)
+    : rawPhoneDigits;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const phoneValid = /^[0-9+() -]+$/.test(phone) && phoneDigits.length >= 7 && phoneDigits.length <= 15;
+  const phoneValid = /^[0-9+() -]+$/.test(phone) && phoneDigits.length === 10;
   // Letters in any script plus the separators real names carry (S. K. Das, D'Souza, Anne-Marie);
   // digits and symbols are refused. U+2019 is allowed because phones autocorrect ' into it.
   const nameValid = /^[\p{L}\p{M}][\p{L}\p{M} '’\-.]{1,99}$/u.test(name);
