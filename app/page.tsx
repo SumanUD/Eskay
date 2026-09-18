@@ -24,6 +24,14 @@ const supportTypes = [
 
 const contactEndpoint = process.env.NEXT_PUBLIC_CONTACT_API_URL ?? "https://eskay.sumitkumardas.xyz/v1/contact";
 
+// `pattern` only blocks submission, it never stops the keystroke, so the field would still
+// show letters until the user pressed send. Drop anything the server would reject as it is typed.
+function stripPhoneInput(event: FormEvent<HTMLInputElement>) {
+  const input = event.currentTarget;
+  const cleaned = input.value.replace(/[^0-9+() -]/g, "");
+  if (cleaned !== input.value) input.value = cleaned;
+}
+
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -307,13 +315,13 @@ export default function Home() {
               <p className="compliance-chip">Corporate information only</p>
             </aside>
             <form id="enquiry-form" onSubmit={submitEnquiry}>
-              <label><span>Full name</span><input name="name" type="text" autoComplete="name" required /></label>
-              <label><span>Organisation</span><input name="organisation" type="text" autoComplete="organization" /></label>
-              <label><span>Work email</span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
-              <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+\(\)\- ]{7,20}" maxLength={20} title="Enter a valid phone number with 7 to 15 digits." /></label>
-              <label className="wide"><span>Enquiry type</span><select name="type" defaultValue="" required><option value="" disabled>Select one</option><option>Corporate enquiry</option><option>Dealer or distributor enquiry</option><option>Customer care</option><option>Other business enquiry</option></select></label>
-              <label className="wide"><span>Your message</span><textarea name="message" rows={5} required /></label>
-              <label className="consent wide"><input name="consent" type="checkbox" required /><span>I agree that ESKAY may use these details to respond to my enquiry.</span></label>
+              <label><span>Full name<b className="req" aria-hidden="true">*</b></span><input name="name" type="text" autoComplete="name" minLength={2} required /></label>
+              <label><span>Organisation<b className="req" aria-hidden="true">*</b></span><input name="organisation" type="text" autoComplete="organization" minLength={2} maxLength={120} required /></label>
+              <label><span>Work email<b className="req" aria-hidden="true">*</b></span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
+              <label><span>Phone number<b className="req" aria-hidden="true">*</b></span><input name="phone" type="tel" autoComplete="tel" inputMode="tel" pattern="[0-9+\(\)\- ]{7,20}" maxLength={20} required title="Enter a valid phone number with 7 to 15 digits." onInput={stripPhoneInput} /></label>
+              <label className="wide"><span>Enquiry type<b className="req" aria-hidden="true">*</b></span><select name="type" defaultValue="" required><option value="" disabled>Select one</option><option>Corporate enquiry</option><option>Dealer or distributor enquiry</option><option>Customer care</option><option>Other business enquiry</option></select></label>
+              <label className="wide"><span>Your message<b className="req" aria-hidden="true">*</b></span><textarea name="message" rows={5} minLength={3} required /></label>
+              <label className="consent wide"><input name="consent" type="checkbox" required /><span>I agree that ESKAY may use these details to respond to my enquiry.<b className="req" aria-hidden="true">*</b></span></label>
               <label className="form-trap" aria-hidden="true"><span>Website</span><input name="website" type="text" tabIndex={-1} autoComplete="off" /></label>
               <button className="button button-red submit-button wide" type="submit" disabled={formState === "submitting"} aria-busy={formState === "submitting"}><span>{formState === "submitting" ? "Sending…" : "Send message"}</span><i><Arrow /></i></button>
               <p className={formState === "idle" ? "form-status wide" : formState === "error" ? "form-status is-visible is-error wide" : "form-status is-visible wide"} role="status" aria-live="polite">

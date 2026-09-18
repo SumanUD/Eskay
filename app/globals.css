@@ -156,6 +156,7 @@ section[id], form[id] { scroll-margin-top: 84px; }
 form { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 22px; padding: 48px; }
 form label { display: grid; gap: 8px; }
 form label > span { color: #655f59; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.req { margin-left: 3px; color: var(--red); font-weight: 700; }
 form input, form textarea, form select { width: 100%; min-height: 50px; padding: 12px 14px; color: var(--ink); border: 1px solid #ded8cf; border-radius: 5px; outline: 0; background: #fff; transition: border-color .2s ease, box-shadow .2s ease; }
 form textarea { resize: vertical; }
 form input:focus, form textarea:focus, form select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(213,165,56,.13); }
