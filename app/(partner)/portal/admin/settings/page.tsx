@@ -35,7 +35,7 @@ function AdminSettings() {
 
   return (
     <>
-      <PageHeader eyebrow="Administration" title="Settings" />
+      <PageHeader title="Settings" />
       {loading && <Loading />}
       {error && <Notice tone="error">{error}</Notice>}
       {data && (

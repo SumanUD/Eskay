@@ -45,7 +45,7 @@ export function MaterialList({ materials }: { materials: Material[] }) {
             <div>
               <strong>{material.title}</strong>
               {material.description && <p>{material.description}</p>}
-              <small>{material.file_name} · {fileSize(material.file_size)}{material.product ? ` · ${material.product}` : ""}</small>
+              <small className="p-meta-row"><span>{material.file_name}</span><span>{fileSize(material.file_size)}</span>{material.product && <span>For {material.product}</span>}</small>
             </div>
             <button className="p-btn is-ghost" type="button" onClick={() => save(material)} disabled={busy === material.id}>
               {busy === material.id ? "Downloading…" : "Download"}

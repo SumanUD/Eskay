@@ -17,7 +17,7 @@ function Materials() {
   const { data, error, loading } = useApi<{ materials: Material[] }>("/materials");
   return (
     <>
-      <PageHeader eyebrow="Downloads" title="Downloadable material" description="Price lists, brochures and documents shared with your account." />
+      <PageHeader title="Downloadable material" description="Price lists, brochures and documents shared with your account." />
       {loading && <Loading />}
       {error && <Notice tone="error">{error}</Notice>}
       {data && (data.materials.length ? <MaterialList materials={data.materials} /> : <EmptyState title="Nothing to download yet">Material shared with your account will appear here.</EmptyState>)}

@@ -6,46 +6,65 @@ import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, ApiError, clearToken, getToken, SIGNED_OUT_EVENT } from "./api";
 import { ROLE_LABEL } from "./format";
+import { Icon, type PortalIconName } from "./icons";
 import { SessionContext } from "./session";
 import type { Role, User } from "./types";
 import { Field, Loading, Notice } from "./ui";
 
-type NavItem = { href: string; label: string; also?: string[] };
+type NavItem = { href: string; label: string; icon: PortalIconName; also?: string[] };
+type NavGroup = { title?: string; items: NavItem[] };
 
-// Each role's menu lists exactly its entitlements from the access brief.
-const NAV: Record<Role, NavItem[]> = {
+// Each role's menu lists exactly its entitlements from the access brief, grouped by what the
+// person is doing: their day-to-day work first, reference material and administration after.
+const NAV: Record<Role, NavGroup[]> = {
   admin: [
-    { href: "/portal", label: "Dashboard" },
-    { href: "/portal/catalogue", label: "Catalogue", also: ["/portal/product"] },
-    { href: "/portal/orders", label: "Orders", also: ["/portal/order"] },
-    { href: "/portal/admin/products", label: "Products" },
-    { href: "/portal/admin/users", label: "Users" },
-    { href: "/portal/admin/states", label: "States" },
-    { href: "/portal/admin/schemes", label: "Schemes" },
-    { href: "/portal/admin/materials", label: "Materials" },
-    { href: "/portal/admin/settings", label: "Settings" },
+    { items: [
+      { href: "/portal", label: "Dashboard", icon: "dashboard" },
+      { href: "/portal/catalogue", label: "Catalogue", icon: "catalogue", also: ["/portal/product"] },
+      { href: "/portal/orders", label: "Orders", icon: "orders", also: ["/portal/order"] },
+    ] },
+    { title: "Manage", items: [
+      { href: "/portal/admin/products", label: "Products", icon: "box" },
+      { href: "/portal/admin/users", label: "Users", icon: "people" },
+      { href: "/portal/admin/states", label: "States", icon: "pin" },
+      { href: "/portal/admin/schemes", label: "Schemes", icon: "tag" },
+      { href: "/portal/admin/materials", label: "Materials", icon: "download" },
+      { href: "/portal/admin/settings", label: "Settings", icon: "sliders" },
+    ] },
   ],
   distributor: [
-    { href: "/portal", label: "Dashboard" },
-    { href: "/portal/catalogue", label: "Catalogue", also: ["/portal/product"] },
-    { href: "/portal/orders/new", label: "Place order" },
-    { href: "/portal/orders", label: "My orders", also: ["/portal/order"] },
-    { href: "/portal/dealers", label: "My dealers" },
-    { href: "/portal/schemes", label: "Schemes" },
-    { href: "/portal/materials", label: "Downloads" },
+    { items: [
+      { href: "/portal", label: "Dashboard", icon: "dashboard" },
+      { href: "/portal/catalogue", label: "Catalogue", icon: "catalogue", also: ["/portal/product"] },
+      { href: "/portal/orders/new", label: "Place order", icon: "cart" },
+      { href: "/portal/orders", label: "My orders", icon: "orders", also: ["/portal/order"] },
+      { href: "/portal/dealers", label: "My dealers", icon: "people" },
+    ] },
+    { title: "Resources", items: [
+      { href: "/portal/schemes", label: "Schemes", icon: "tag" },
+      { href: "/portal/materials", label: "Downloads", icon: "download" },
+    ] },
   ],
   dealer: [
-    { href: "/portal", label: "Overview" },
-    { href: "/portal/catalogue", label: "Catalogue", also: ["/portal/product"] },
-    { href: "/portal/schemes", label: "Schemes" },
-    { href: "/portal/materials", label: "Downloads" },
+    { items: [
+      { href: "/portal", label: "Overview", icon: "dashboard" },
+      { href: "/portal/catalogue", label: "Catalogue", icon: "catalogue", also: ["/portal/product"] },
+    ] },
+    { title: "Resources", items: [
+      { href: "/portal/schemes", label: "Schemes", icon: "tag" },
+      { href: "/portal/materials", label: "Downloads", icon: "download" },
+    ] },
   ],
   sales: [
-    { href: "/portal", label: "Dashboard" },
-    { href: "/portal/orders", label: "Area orders", also: ["/portal/order"] },
-    { href: "/portal/distributors", label: "My distributors" },
+    { items: [
+      { href: "/portal", label: "Dashboard", icon: "dashboard" },
+      { href: "/portal/orders", label: "Area orders", icon: "orders", also: ["/portal/order"] },
+      { href: "/portal/distributors", label: "My distributors", icon: "truck" },
+    ] },
   ],
 };
+
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -97,7 +116,8 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   }
   if (!session) return <div className="p-centre"><Loading label="Opening the partner portal…" /></div>;
 
-  const items = NAV[session.user.role];
+  const me = session.user;
+  const locked = me.must_change_password;
   const isActive = (item: NavItem) => pathname === item.href || (item.also ?? []).includes(pathname);
 
   return (
@@ -108,22 +128,40 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             <Image src="/logo.png" alt="ESKAY" width={1263} height={592} loading="eager" />
             <span>Partner portal</span>
           </Link>
+
           <div className="p-whoami">
-            <strong>{session.user.name}</strong>
-            <span>{ROLE_LABEL[session.user.role]}{session.user.state ? ` · ${session.user.state}` : ""}</span>
+            <span className="p-avatar" aria-hidden="true">{initials(me.name)}</span>
+            <div>
+              <strong>{me.name}</strong>
+              <span>{ROLE_LABEL[me.role]}</span>
+              {me.state && <small>{me.state}</small>}
+            </div>
           </div>
-          {!session.user.must_change_password && (
+
+          {!locked && (
             <nav className="p-nav">
-              {items.map((item) => (
-                <Link key={item.href} href={item.href} className={isActive(item) ? "active" : undefined} aria-current={isActive(item) ? "page" : undefined}>
-                  {item.label}
-                </Link>
+              {NAV[me.role].map((group, index) => (
+                <div className="p-nav-group" key={group.title ?? index}>
+                  {group.title && <p className="p-nav-title">{group.title}</p>}
+                  {group.items.map((item) => (
+                    <Link key={item.href} href={item.href} className={isActive(item) ? "active" : undefined} aria-current={isActive(item) ? "page" : undefined}>
+                      <Icon name={item.icon} />
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
               ))}
             </nav>
           )}
+
           <div className="p-sidebar-foot">
-            {!session.user.must_change_password && <Link href="/portal/profile" className={pathname === "/portal/profile" ? "active" : undefined}>My profile</Link>}
-            <button type="button" onClick={signOut}>Sign out</button>
+            {!locked && (
+              <Link href="/portal/profile" className={pathname === "/portal/profile" ? "active" : undefined}>
+                <Icon name="user" />
+                My profile
+              </Link>
+            )}
+            <button type="button" onClick={signOut}><Icon name="signout" />Sign out</button>
           </div>
         </aside>
 
@@ -137,7 +175,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
           <main className="p-content" id="content">
-            {session.user.must_change_password ? <ForcePasswordChange /> : children}
+            {locked ? <ForcePasswordChange /> : children}
           </main>
         </div>
       </div>
@@ -152,7 +190,6 @@ function ForcePasswordChange() {
     <div className="p-narrow">
       <header className="p-page-head">
         <div>
-          <p className="p-eyebrow">Welcome</p>
           <h1>Set your own password</h1>
           <p className="p-lead">You signed in with a temporary password. Choose a new one to open the portal.</p>
         </div>

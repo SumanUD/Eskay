@@ -7,7 +7,7 @@ import { api } from "../../_lib/api";
 import { formatDateTime, rupees, STATUS_LABEL } from "../../_lib/format";
 import { RoleGate, useApi, useSession } from "../../_lib/session";
 import type { Order, OrderStatus } from "../../_lib/types";
-import { Loading, Notice, StatusBadge } from "../../_lib/ui";
+import { BackLink, Loading, Notice, StatusBadge } from "../../_lib/ui";
 
 const STATUSES = Object.keys(STATUS_LABEL) as OrderStatus[];
 
@@ -50,12 +50,12 @@ function OrderDetail() {
 
   return (
     <>
-      <Link className="p-back" href="/portal/orders">← Orders</Link>
+      <BackLink href="/portal/orders">Orders</BackLink>
       <header className="p-page-head">
         <div>
           <p className="p-eyebrow">Order #{order.id}</p>
           <h1>{rupees(order.total)}</h1>
-          <p className="p-lead">Placed {formatDateTime(order.created_at)}{order.updated_at !== order.created_at ? ` · updated ${formatDateTime(order.updated_at)}` : ""}</p>
+          <p className="p-lead">Placed {formatDateTime(order.created_at)}{order.updated_at !== order.created_at ? `, last updated ${formatDateTime(order.updated_at)}` : ""}</p>
         </div>
         <StatusBadge status={order.status} />
       </header>

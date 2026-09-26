@@ -49,7 +49,7 @@ function AdminStates() {
 
   return (
     <>
-      <PageHeader eyebrow="Administration" title="States" description="The regions products can be flagged for. New states can be added at any time and then selected on each product." />
+      <PageHeader title="States" description="The regions products can be flagged for. New states can be added at any time and then selected on each product." />
       <form className="p-card p-inline-form" onSubmit={add}>
         <Field label="State name" required><input name="name" minLength={2} maxLength={60} required placeholder="e.g. Jharkhand" /></Field>
         <Field label="Code" hint="Optional short code."><input name="code" maxLength={10} placeholder="JH" /></Field>

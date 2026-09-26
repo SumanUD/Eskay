@@ -17,7 +17,7 @@ function Schemes() {
   const { data, error, loading } = useApi<{ schemes: Scheme[] }>("/schemes");
   return (
     <>
-      <PageHeader eyebrow="Schemes" title="Current schemes" description="Trade schemes available to your account, including those starting soon." />
+      <PageHeader title="Current schemes" description="Trade schemes available to your account, including those starting soon." />
       {loading && <Loading />}
       {error && <Notice tone="error">{error}</Notice>}
       {data && !data.schemes.length && <EmptyState title="No schemes running">New schemes will be listed here as soon as ESKAY publishes them.</EmptyState>}

@@ -30,7 +30,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <PageHeader eyebrow="Account" title="My profile" />
+      <PageHeader title="My profile" />
       <div className="p-profile-grid">
         <section className="p-card">
           <h2 className="p-card-title">Account</h2>

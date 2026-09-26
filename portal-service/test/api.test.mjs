@@ -331,8 +331,19 @@ test("ESKAY partner portal", async (t) => {
     const sales = (await api("/dashboard", { token: tokens.asm2 })).body;
     assert.equal(sales.counts.distributors, 1);
     assert.equal(sales.counts.open_orders, 1);
+    // Chart data follows the same scoping as the orders themselves.
+    assert.deepEqual(distributor.insights.status, { placed: 0, confirmed: 0, dispatched: 0, delivered: 0, cancelled: 1 });
+    assert.equal(distributor.insights.monthly.length, 6, "six months, current month last");
+    assert.match(distributor.insights.monthly[5].month, /^\d{4}-\d{2}$/);
+    assert.deepEqual(distributor.insights.monthly.map((m) => m.value), [0, 0, 0, 0, 0, 0], "a cancelled order adds no value");
+    assert.equal(sales.insights.status.confirmed, 1);
+    assert.equal(sales.insights.status.cancelled, 0, "another area's cancelled order is not counted");
+    assert.equal(sales.insights.monthly[5].value, DIST_PRICE * 5, "this month's value is the confirmed Bihar order");
+    assert.equal(sales.insights.monthly[5].orders, 1);
+
     const dealer = (await api("/dashboard", { token: tokens.dealer })).body;
     assert.equal(dealer.recent_orders, undefined, "dealers have no order data");
+    assert.equal(dealer.insights, undefined, "nor any order charts");
     assert.equal((await api("/dashboard", { token: tokens.admin })).body.counts.distributors, 2);
   });
 

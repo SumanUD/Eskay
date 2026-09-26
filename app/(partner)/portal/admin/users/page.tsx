@@ -47,7 +47,6 @@ function AdminUsers() {
   return (
     <>
       <PageHeader
-        eyebrow="Administration"
         title="Users"
         description="Every account is created here; there is no public sign-up. New accounts get a temporary password that must be changed at first sign-in."
         actions={<button className="p-btn" type="button" onClick={() => setEditing("new")}>Add user</button>}

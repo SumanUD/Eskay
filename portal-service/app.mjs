@@ -380,6 +380,22 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
 
   // ---------- Dashboard ----------
 
+  // Where a role's orders stand and how their value has moved, for the dashboard charts. Months
+  // are Indian calendar months; the value and order count exclude cancelled orders.
+  function orderInsights(user) {
+    const scope = orderScope(user);
+    const status = Object.fromEntries(ORDER_STATUSES.map((name) => [name, 0]));
+    for (const row of all(`SELECT o.status, COUNT(*) AS n FROM orders o JOIN users d ON d.id = o.distributor_id WHERE ${scope.where} GROUP BY o.status`, ...scope.params)) status[row.status] = row.n;
+
+    const today = new Date(now() + 330 * 60 * 1000);
+    const months = Array.from({ length: 6 }, (_, index) => new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5 + index, 1)).toISOString().slice(0, 7));
+    const since = new Date(Date.parse(`${months[0]}-01T00:00:00Z`) - 330 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const totals = new Map(all(`SELECT strftime('%Y-%m', o.created_at, '+330 minutes') AS month, COUNT(*) AS orders, SUM(o.total) AS value
+      FROM orders o JOIN users d ON d.id = o.distributor_id
+      WHERE ${scope.where} AND o.status <> 'cancelled' AND o.created_at >= ? GROUP BY month`, ...scope.params, since).map((row) => [row.month, row]));
+    return { status, monthly: months.map((month) => ({ month, orders: totals.get(month)?.orders ?? 0, value: totals.get(month)?.value ?? 0 })) };
+  }
+
   route("GET", "/dashboard", "*", ({ user }) => {
     const recent = (where, ...params) => all(`${ORDER_SELECT} WHERE ${where} ORDER BY o.id DESC LIMIT 5`, ...params);
     if (user.role === "admin") {
@@ -395,6 +411,7 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
         },
         recent_orders: recent("1 = 1"),
         region_filter: regionFilterOn() ? "on" : "off",
+        insights: orderInsights(user),
       }];
     }
     if (user.role === "sales") {
@@ -405,6 +422,7 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
           orders: count("SELECT COUNT(*) AS n FROM orders o JOIN users d ON d.id = o.distributor_id WHERE d.sales_manager_id = ?", user.id),
         },
         recent_orders: recent("d.sales_manager_id = ?", user.id),
+        insights: orderInsights(user),
       }];
     }
     const counts = {
@@ -422,6 +440,7 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
       },
       order_value: count("SELECT COALESCE(SUM(total), 0) AS n FROM orders WHERE distributor_id = ? AND status <> 'cancelled'", user.id),
       recent_orders: recent("o.distributor_id = ?", user.id),
+      insights: orderInsights(user),
     }];
   });
 

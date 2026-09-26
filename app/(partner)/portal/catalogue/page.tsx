@@ -32,7 +32,6 @@ function Catalogue() {
   return (
     <>
       <PageHeader
-        eyebrow="Catalogue"
         title="Products"
         description={user.role === "admin" ? "Every product, with both distributor and dealer prices." : `Prices shown are your ${user.role} prices.`}
         actions={user.role === "distributor" ? <Link className="p-btn" href="/portal/orders/new">Place an order</Link> : user.role === "admin" ? <Link className="p-btn" href="/portal/admin/products">Manage products</Link> : undefined}
@@ -58,7 +57,7 @@ function Catalogue() {
               <Link className="p-product-card" key={product.id} href={`/portal/product?id=${product.id}`}>
                 <ProductImage product={product} />
                 <div className="p-product-body">
-                  <span className="p-product-meta">{product.category && `${product.category} · `}<span className="p-code">{product.code}</span></span>
+                  <span className="p-product-meta">{product.category && <span>{product.category}</span>}<span className="p-code">{product.code}</span></span>
                   <h3>{product.name}</h3>
                   {product.pack_size && <span className="p-product-pack">{product.pack_size}</span>}
                   <Price product={product} />

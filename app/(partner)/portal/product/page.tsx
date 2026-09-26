@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { MaterialList, Price } from "../../_lib/catalogue";
 import { RoleGate, useApi, useSession } from "../../_lib/session";
 import type { Material, Product } from "../../_lib/types";
-import { Loading, Notice, ProductImage } from "../../_lib/ui";
+import { BackLink, Loading, Notice, ProductImage } from "../../_lib/ui";
 
 export default function ProductPage() {
   return (
@@ -31,11 +31,11 @@ function ProductDetail() {
 
   return (
     <>
-      <Link className="p-back" href="/portal/catalogue">← Catalogue</Link>
+      <BackLink href="/portal/catalogue">Catalogue</BackLink>
       <article className="p-product-detail">
         <ProductImage product={product} className="is-large" />
         <div>
-          <p className="p-eyebrow">{[product.category, product.code].filter(Boolean).join(" · ")}</p>
+          <p className="p-product-meta">{product.category && <span>{product.category}</span>}<span className="p-code">{product.code}</span></p>
           <h1>{product.name}</h1>
           {product.pack_size && <p className="p-product-pack">{product.pack_size}</p>}
           <Price product={product} />

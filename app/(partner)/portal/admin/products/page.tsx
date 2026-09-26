@@ -37,7 +37,6 @@ function AdminProducts() {
   return (
     <>
       <PageHeader
-        eyebrow="Administration"
         title="Products"
         description="Every product needs a distributor price, a dealer price and at least one state it is released in."
         actions={<button className="p-btn" type="button" onClick={() => setEditing("new")} disabled={!activeStates.length}>Add product</button>}
@@ -57,7 +56,7 @@ function AdminProducts() {
               {products.data.products.map((product) => (
                 <tr key={product.id}>
                   <td><ProductImage product={product} className="is-thumb" /></td>
-                  <td><strong>{product.name}</strong><small className="p-sub">{product.code}{product.pack_size ? ` · ${product.pack_size}` : ""}</small></td>
+                  <td><strong>{product.name}</strong><small className="p-sub p-meta-row"><span className="p-code">{product.code}</span>{product.pack_size && <span>{product.pack_size}</span>}</small></td>
                   <td>{product.category || "—"}</td>
                   <td className="num">{rupees(product.distributor_price ?? 0)}</td>
                   <td className="num">{rupees(product.dealer_price ?? 0)}</td>

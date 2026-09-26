@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { api, getToken, setToken } from "../_lib/api";
+import { Icon } from "../_lib/icons";
 import type { User } from "../_lib/types";
 import { Field, Notice } from "../_lib/ui";
 
@@ -73,7 +74,7 @@ function SignIn() {
           </Field>
           {error && <Notice tone="error">{error}</Notice>}
           <button className="p-btn is-block" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-          <Link className="p-back" href="/">← Back to eskaylife.com</Link>
+          <Link className="p-back" href="/"><Icon name="back" />Back to eskaylife.com</Link>
         </form>
       </section>
     </div>

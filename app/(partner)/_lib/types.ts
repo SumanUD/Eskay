@@ -87,9 +87,13 @@ export type Order = {
 
 export type Contact = { id: number; name: string; organisation: string; email: string; phone: string; address: string; state: string | null; open_orders?: number; orders?: number };
 
+export type MonthTotal = { month: string; orders: number; value: number };
+
 export type Dashboard = {
   counts: Record<string, number>;
   recent_orders?: Order[];
   order_value?: number;
   region_filter?: "on" | "off";
+  // Present for every role that has orders; dealers have none.
+  insights?: { status: Record<OrderStatus, number>; monthly: MonthTotal[] };
 };

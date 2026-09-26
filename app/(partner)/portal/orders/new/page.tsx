@@ -50,7 +50,7 @@ function NewOrder() {
 
   return (
     <>
-      <PageHeader eyebrow="Orders" title="Place an order" description="Enter quantities for the products you need. Prices are your distributor prices." />
+      <PageHeader title="Place an order" description="Enter quantities for the products you need. Prices are your distributor prices." />
       {loading && <Loading />}
       {error && <Notice tone="error">{error}</Notice>}
       {data && !products.length && <EmptyState title="No products available to order" />}
@@ -64,7 +64,7 @@ function NewOrder() {
                   const quantity = Number(quantities[product.id] ?? 0);
                   return (
                     <tr key={product.id} className={quantity > 0 ? "is-selected" : undefined}>
-                      <td>{product.name}<small className="p-sub">{[product.code, product.pack_size].filter(Boolean).join(" · ")}</small></td>
+                      <td>{product.name}<small className="p-sub p-meta-row"><span className="p-code">{product.code}</span>{product.pack_size && <span>{product.pack_size}</span>}</small></td>
                       <td className="num">{rupees(product.price ?? 0)}</td>
                       <td className="num">
                         <input

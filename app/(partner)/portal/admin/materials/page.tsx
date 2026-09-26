@@ -35,7 +35,6 @@ function AdminMaterials() {
   return (
     <>
       <PageHeader
-        eyebrow="Administration"
         title="Downloadable material"
         description="Files partners can download. Material linked to a product is hidden wherever that product is hidden."
         actions={<button className="p-btn" type="button" onClick={() => setAdding(true)}>Upload material</button>}

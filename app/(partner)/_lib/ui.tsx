@@ -4,19 +4,23 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiBlob } from "./api";
 import { formatDate, rupees, STATUS_LABEL } from "./format";
+import { Icon, type PortalIconName } from "./icons";
 import type { Contact, Order, OrderStatus, Product } from "./types";
 
-export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: React.ReactNode }) {
+export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
     <header className="p-page-head">
       <div>
-        {eyebrow && <p className="p-eyebrow">{eyebrow}</p>}
         <h1>{title}</h1>
         {description && <p className="p-lead">{description}</p>}
       </div>
       {actions && <div className="p-page-actions">{actions}</div>}
     </header>
   );
+}
+
+export function BackLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return <Link className="p-back" href={href}><Icon name="back" />{children}</Link>;
 }
 
 export function Loading({ label = "Loading…" }: { label?: string }) {
@@ -27,19 +31,34 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "error" | 
   return <div className={`p-notice is-${tone}`} role={tone === "error" ? "alert" : "status"}>{children}</div>;
 }
 
+// The brand's concentric gold rings, drawn around an open box: "nothing in here yet".
+function EmptyArt() {
+  return (
+    <svg className="p-empty-art" viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="60" r="56" className="ring-3" />
+      <circle cx="60" cy="60" r="42" className="ring-2" />
+      <circle cx="60" cy="60" r="28" className="ring-1" />
+      <path className="box" d="m60 44 17 9v18l-17 9-17-9V53l17-9Z" />
+      <path className="box" d="m43 53 17 9 17-9M60 62v18" />
+      <path className="lid" d="M43 53 34 45l17-8 9 7M77 53l9-8-17-8-9 7" />
+    </svg>
+  );
+}
+
 export function EmptyState({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="p-empty">
+      <EmptyArt />
       <h2>{title}</h2>
       {children && <p>{children}</p>}
     </div>
   );
 }
 
-export function Stat({ label, value, href, note }: { label: string; value: React.ReactNode; href?: string; note?: string }) {
+export function Stat({ label, value, href, note, icon }: { label: string; value: React.ReactNode; href?: string; note?: string; icon?: PortalIconName }) {
   const body = (
     <>
-      <span>{label}</span>
+      <span className="p-stat-label">{icon && <Icon name={icon} />}{label}</span>
       <strong>{value}</strong>
       {note && <small>{note}</small>}
     </>
@@ -47,8 +66,9 @@ export function Stat({ label, value, href, note }: { label: string; value: React
   return href ? <Link className="p-stat is-link" href={href}>{body}</Link> : <div className="p-stat">{body}</div>;
 }
 
+/** A dot in the order's step colour beside its name; the colour never carries meaning alone. */
 export function StatusBadge({ status }: { status: OrderStatus }) {
-  return <span className={`p-badge status-${status}`}>{STATUS_LABEL[status]}</span>;
+  return <span className={`p-status status-${status}`}><i aria-hidden="true" />{STATUS_LABEL[status]}</span>;
 }
 
 export function Field({ label, hint, required, children, wide }: { label: string; hint?: string; required?: boolean; children: React.ReactNode; wide?: boolean }) {
@@ -150,7 +170,7 @@ export function ContactTable({ contacts, orders }: { contacts: Contact[]; orders
 }
 
 export function OrdersTable({ orders, showDistributor }: { orders: Order[]; showDistributor: boolean }) {
-  if (!orders.length) return <EmptyState title="No orders yet" />;
+  if (!orders.length) return <EmptyState title="No orders yet">Orders appear here as soon as they are placed.</EmptyState>;
   return (
     <div className="p-table-wrap">
       <table className="p-table">

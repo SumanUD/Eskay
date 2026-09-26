@@ -36,7 +36,6 @@ function AdminSchemes() {
   return (
     <>
       <PageHeader
-        eyebrow="Administration"
         title="Schemes"
         description="Partners see a scheme while it is active and has not ended. Upcoming schemes are shown as starting soon."
         actions={<button className="p-btn" type="button" onClick={() => setEditing("new")}>Add scheme</button>}

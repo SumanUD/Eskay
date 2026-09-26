@@ -31,7 +31,7 @@ function Orders() {
 
   return (
     <>
-      <PageHeader eyebrow="Orders" title={heading} description={description} actions={user.role === "distributor" ? <Link className="p-btn" href="/portal/orders/new">Place an order</Link> : undefined} />
+      <PageHeader title={heading} description={description} actions={user.role === "distributor" ? <Link className="p-btn" href="/portal/orders/new">Place an order</Link> : undefined} />
       <div className="p-pills" role="group" aria-label="Filter by status">
         {FILTERS.map((value) => (
           <button key={value || "all"} type="button" className={status === value ? "active" : undefined} aria-pressed={status === value} onClick={() => setStatus(value)}>
