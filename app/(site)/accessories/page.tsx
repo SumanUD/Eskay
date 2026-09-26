@@ -89,7 +89,7 @@ export default function Accessories() {
             <div className="icon-disc"><LineIcon type="business" /></div>
             <div>
               <h3>Availability for trade partners</h3>
-              <p>Information on the accessory range is shared with distributors and retail partners through our business network.</p>
+              <p>Information on the accessory range is shared with distributors and retail partners through our partner portal. <Link className="inline-link" href="/login">Registered partners can sign in here.</Link></p>
             </div>
             <Link className="button button-red" href="/business-network"><span>Business network</span><i><Arrow /></i></Link>
           </div>

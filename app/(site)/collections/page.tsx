@@ -71,7 +71,7 @@ export default function Collections() {
             <div className="icon-disc"><LineIcon type="business" /></div>
             <div>
               <h3>Portfolio information for trade partners</h3>
-              <p>Detailed portfolio information is shared with registered distributors and retail partners through our business network.</p>
+              <p>Detailed portfolio information is shared with registered distributors and retail partners through our partner portal. <Link className="inline-link" href="/login">Registered partners can sign in here.</Link></p>
             </div>
             <Link className="button button-red" href="/business-network"><span>Business network</span><i><Arrow /></i></Link>
           </div>

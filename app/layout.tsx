@@ -1,7 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { RevealObserver } from "./_components/reveal-observer";
-import { SiteFooter } from "./_components/site-footer";
-import { SiteHeader } from "./_components/site-header";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,18 +16,16 @@ export const viewport: Viewport = {
   themeColor: "#f4f1ea",
 };
 
+// The public site and the partner portal each bring their own chrome from their route group;
+// this root layout only provides the document.
+//
 // `data-scroll-behavior` lets Next jump straight to the top on route changes. Without it,
 // Next 16 leaves the stylesheet's smooth scrolling in place and every page change would
 // glide up from wherever the reader was, while in-page anchor links stay smooth either way.
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body>
-        <SiteHeader />
-        <main id="content">{children}</main>
-        <SiteFooter />
-        <RevealObserver />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

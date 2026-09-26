@@ -119,6 +119,7 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
+        <Link className="menu-partner" href="/login" onClick={closeMenu}>Registered partner? <strong>Sign in to the partner portal</strong><Arrow /></Link>
         <div className="menu-footer"><span>Experience</span><span>Knowledge</span><span>Evolution</span></div>
       </div>
     </>
