@@ -1,0 +1,24 @@
+[Unit]
+Description=ESKAY partner portal API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eskay-portal
+Group=eskay-portal
+WorkingDirectory=/opt/eskay-portal-api
+EnvironmentFile=/etc/eskay-portal-api.env
+# node:sqlite is still flagged experimental in Node 22; the warning is expected, not a fault.
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /opt/eskay-portal-api/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The database and uploaded files are the only things this service may write.
+ReadWritePaths=/var/lib/eskay-portal-api
+
+[Install]
+WantedBy=multi-user.target
