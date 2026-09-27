@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Arrow } from "./icons";
+import { FooterPartnerLink } from "./portal-session";
 import { siteNav } from "./site-nav";
 
 const exploreLinks = siteNav.filter((item) => item.href !== "/" && item.href !== "/contact");
@@ -19,7 +20,7 @@ export function SiteFooter() {
         </div>
         <div>
           <h3>Enquiries</h3>
-          <Link href="/login">Partner login <Arrow /></Link>
+          <FooterPartnerLink />
           <Link href="/contact#enquiry-form">Corporate enquiries <Arrow /></Link>
           <Link href="/business-network#enquiries">Business network <Arrow /></Link>
           <Link href="/contact#enquiry-form">Customer care <Arrow /></Link>

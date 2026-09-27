@@ -42,14 +42,21 @@ section[id], form[id], article[id] { scroll-margin-top: 84px; }
 .button:hover i { color: var(--ink); background: white; }
 .button-red { color: white; background: linear-gradient(135deg, #f52b35, #dc111d); }
 .button-outline { color: white; border: 1px solid rgba(221,170,55,.85); background: rgba(8,8,8,.45); backdrop-filter: blur(7px); }
-.header-button { position: absolute; top: 50%; right: 0; opacity: var(--full-opacity, 1); transform: translateY(-50%); transition: opacity .12s linear, box-shadow .25s ease; }
-.header-button:hover { transform: translateY(calc(-50% - 2px)); }
+.header-actions { position: absolute; top: 50%; right: 0; display: flex; align-items: center; gap: 12px; opacity: var(--full-opacity, 1); transform: translateY(-50%); transition: opacity .12s linear; }
+/* Shown while a partner is signed in to the portal in this browser. Beside the full navigation
+   there is room only for the avatar; the words "My portal" join it once the navigation folds away. */
+.portal-chip { position: relative; display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 4px; color: white; border: 1px solid rgba(221,170,55,.85); border-radius: 999px; background: rgba(8,8,8,.45); backdrop-filter: blur(7px); font-size: 14px; font-weight: 700; white-space: nowrap; transition: border-color .25s ease, background .25s ease, transform .25s ease; }
+.portal-chip:hover { border-color: #efc763; background: rgba(8,8,8,.62); transform: translateY(-2px); }
+.portal-chip-avatar { width: 34px; height: 34px; display: grid; place-items: center; color: #1b140f; border-radius: 50%; background: linear-gradient(135deg, #f4d47e, #c8952e); font-size: 12px; font-weight: 800; letter-spacing: .03em; }
+/* A small green dot: signed in. */
+.portal-chip::after { content: ""; position: absolute; top: 3px; left: 31px; width: 9px; height: 9px; border: 2px solid #15110e; border-radius: 50%; background: #3ccf7a; }
+.portal-chip-text { display: none; }
 .menu-toggle { position: absolute; z-index: 3; top: 50%; right: 8px; width: 48px; height: 48px; padding: 0; display: grid; align-content: center; gap: 6px; opacity: var(--menu-opacity, 0); border: 1px solid rgba(31,25,19,.1); border-radius: 7px 7px 15px 7px; background: rgba(255,255,255,.76); box-shadow: 0 7px 18px rgba(27,18,11,.09); transform: translateY(-50%); pointer-events: none; cursor: pointer; transition: background .25s ease, border-color .25s ease, box-shadow .25s ease; }
 .menu-toggle:hover { border-color: rgba(214,166,59,.75); background: white; box-shadow: 0 10px 24px rgba(27,18,11,.14); }
 .menu-toggle span { width: 21px; height: 2px; margin: auto; background: var(--ink); transform-origin: center; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
 .menu-toggle.is-open span:first-child { transform: translateY(4px) rotate(45deg); }
 .menu-toggle.is-open span:last-child { transform: translateY(-4px) rotate(-45deg); }
-.site-header.is-condensed .nav, .site-header.is-condensed .header-button { pointer-events: none; }
+.site-header.is-condensed .nav, .site-header.is-condensed .header-actions { pointer-events: none; }
 .site-header.is-condensed .menu-toggle, .menu-toggle.is-open { pointer-events: auto; }
 
 .menu-backdrop { position: fixed; z-index: 58; inset: 0; display: block; width: 100%; height: 100%; padding: 0; opacity: 0; border: 0; background: rgba(8,7,6,.58); backdrop-filter: blur(0); pointer-events: none; cursor: default; transition: opacity .45s ease, backdrop-filter .45s ease; }
@@ -271,9 +278,23 @@ footer { color: #d2cec8; background: radial-gradient(circle at 35% 0, #241c14, t
 /* Six sections no longer fit inline beside the logo and header button below this width, so the
    menu toggle takes over earlier than the rest of the tablet layout. Mirrors
    INLINE_NAV_BREAKPOINT in site-header.tsx. */
+/* While a partner is signed in, the portal avatar needs room beside the header button, so the
+   navigation folds into the menu a little earlier. */
+@media (max-width: 1200px) {
+  .site-header.has-portal .nav, .site-header.has-portal .header-button { display: none; }
+  .site-header.has-portal .menu-toggle { opacity: 1; pointer-events: auto; }
+  .site-header.has-portal .header-actions { right: 66px; }
+  .site-header.has-portal .portal-chip { padding-right: 16px; }
+  .site-header.has-portal .portal-chip-text { display: inline; }
+}
+
 @media (max-width: 1120px) {
   .nav { display: none; }
   .header-button { display: none; }
+  /* The chip sits to the left of the menu toggle once the header button gives way. */
+  .header-actions { right: 66px; }
+  .portal-chip { padding-right: 16px; }
+  .portal-chip-text { display: inline; }
   .menu-toggle { opacity: 1; pointer-events: auto; }
 }
 
@@ -308,6 +329,9 @@ footer { color: #d2cec8; background: radial-gradient(circle at 35% 0, #241c14, t
   .container { width: min(100% - 36px, 1180px); }
   .brand { left: 8px; width: 106px; height: 52px; }
   .menu-toggle { right: 7px; width: 46px; height: 46px; }
+  .header-actions { right: 62px; }
+  .portal-chip { min-height: 42px; padding-right: 13px; font-size: 13px; }
+  .portal-chip-avatar { width: 32px; height: 32px; }
   .menu-dropdown { top: 81px; width: calc(100% - 28px); }
   .menu-heading { padding: 23px 24px 20px; }
   .menu-dropdown nav a { grid-template-columns: 35px 1fr 40px; min-height: 66px; padding: 0 21px; }

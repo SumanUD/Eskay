@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Arrow } from "./icons";
+import { MenuPartnerLink, PortalChip, usePortalUser } from "./portal-session";
 import { primaryNav, siteNav } from "./site-nav";
 
 // At or below this width the inline navigation no longer fits between the logo and the
@@ -14,6 +15,7 @@ const INLINE_NAV_BREAKPOINT = 1120;
 export function SiteHeader() {
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
+  const portalUser = usePortalUser();
   // The menu remembers the page it was opened on, so it closes by itself on navigation
   // (including back and forward) without an effect having to reset it.
   const [openOn, setOpenOn] = useState<string | null>(null);
@@ -86,7 +88,7 @@ export function SiteHeader() {
     <>
       <a className="skip-link" href="#content">Skip to content</a>
       <div className="top-accent" />
-      <header className="site-header" ref={headerRef}>
+      <header className={portalUser ? "site-header has-portal" : "site-header"} ref={headerRef}>
         <div className="header-inner">
           <Link className="brand" href="/" aria-label="ESKAY home" onClick={closeMenu}>
             <Image src="/logo.png" alt="ESKAY" width={1263} height={592} loading="eager" />
@@ -98,7 +100,10 @@ export function SiteHeader() {
               </Link>
             ))}
           </nav>
-          <Link className="button button-red header-button" href="/contact"><span>Get in touch</span><i><Arrow /></i></Link>
+          <div className="header-actions">
+            <PortalChip user={portalUser} />
+            <Link className="button button-red header-button" href="/contact"><span>Get in touch</span><i><Arrow /></i></Link>
+          </div>
           <button className={menuOpen ? "menu-toggle is-open" : "menu-toggle"} type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setOpenOn((current) => (current === pathname ? null : pathname))}>
             <span /><span />
           </button>
@@ -119,7 +124,7 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <Link className="menu-partner" href="/login" onClick={closeMenu}>Registered partner? <strong>Sign in to the partner portal</strong><Arrow /></Link>
+        <MenuPartnerLink user={portalUser} onNavigate={closeMenu} />
         <div className="menu-footer"><span>Experience</span><span>Knowledge</span><span>Evolution</span></div>
       </div>
     </>

@@ -123,7 +123,8 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     <SessionContext.Provider value={session}>
       <div className={menuOpen ? "p-shell menu-open" : "p-shell"}>
         <aside className="p-sidebar" aria-label="Portal navigation">
-          <Link className="p-brand" href="/portal">
+          {/* The logo leads back to the public site; Dashboard in the menu is the portal's home. */}
+          <Link className="p-brand" href="/" aria-label="ESKAY home">
             <Image src="/logo.png" alt="ESKAY" width={1263} height={592} loading="eager" />
             <span>Partner portal</span>
           </Link>
@@ -168,7 +169,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         {menuOpen && <button type="button" className="p-scrim" aria-label="Close portal menu" onClick={() => setMenuOpenOn(null)} />}
         <div className="p-main">
           <div className="p-topbar">
-            <Link className="p-topbar-brand" href="/portal"><Image src="/logo.png" alt="ESKAY" width={1263} height={592} /></Link>
+            <Link className="p-topbar-brand" href="/" aria-label="ESKAY home"><Image src="/logo.png" alt="ESKAY" width={1263} height={592} /></Link>
             <button type="button" className="p-menu-btn" aria-expanded={menuOpen} aria-label="Toggle portal menu" onClick={() => setMenuOpenOn((current) => (current === pathname ? null : pathname))}>
               <span /><span /><span />
             </button>
