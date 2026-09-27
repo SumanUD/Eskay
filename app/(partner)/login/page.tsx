@@ -58,7 +58,7 @@ function SignIn() {
         <div>
           <p className="p-eyebrow">Partner portal</p>
           <h1>Access for registered ESKAY partners.</h1>
-          <p>Distributors, dealers and the ESKAY team sign in here for the catalogue, pricing, schemes, orders and downloadable material.</p>
+          <p>Distributors, dealers and the ESKAY team sign in here for products, pricing, schemes and downloadable material.</p>
         </div>
         <p className="p-login-note">Accounts are created by ESKAY. If you are a registered partner without a login, please contact your ESKAY representative.</p>
       </section>

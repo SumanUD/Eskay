@@ -5,7 +5,7 @@ const paths = {
   dashboard: <><rect x="3.5" y="3.5" width="7" height="9" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="5" rx="1.5" /><rect x="13.5" y="11.5" width="7" height="9" rx="1.5" /><rect x="3.5" y="15.5" width="7" height="5" rx="1.5" /></>,
   catalogue: <><path d="M3.5 5.5c2.6-1.3 5.4-1 8.5 1v13c-3.1-2-5.9-2.3-8.5-1v-13Z" /><path d="M20.5 5.5c-2.6-1.3-5.4-1-8.5 1v13c3.1-2 5.9-2.3 8.5-1v-13Z" /></>,
   cart: <><path d="M3 4h2.2l2.1 10.2a1.5 1.5 0 0 0 1.5 1.2h8.3a1.5 1.5 0 0 0 1.5-1.1L20.5 8H6.1" /><circle cx="9.5" cy="19" r="1.4" /><circle cx="17" cy="19" r="1.4" /></>,
-  orders: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4.5V3h6v1.5M8.5 10h7M8.5 13.5h7M8.5 17h4" /></>,
+  document: <><path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-10l-5-5Z" /><path d="M14 3.5v5h5M8.5 13h7M8.5 16.5h5" /></>,
   people: <><circle cx="9" cy="8.5" r="3.2" /><path d="M3 19.5c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" /><path d="M16 5.6a3 3 0 0 1 0 5.8M17.5 14.3c2.1.6 3.5 2.5 3.5 5.2" /></>,
   truck: <><path d="M2.5 6.5h11v9h-11zM13.5 9.5h4l3 3.2v2.8h-7" /><circle cx="6.5" cy="17.5" r="1.8" /><circle cx="17" cy="17.5" r="1.8" /></>,
   tag: <><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.2 6.2a1.4 1.4 0 0 1-2 0l-8.8-7.8Z" /><circle cx="8" cy="8" r="1.4" /></>,
@@ -19,6 +19,8 @@ const paths = {
   plus: <><path d="M12 5v14M5 12h14" /></>,
   arrow: <><path d="M5 12h14M13.5 6.5 19 12l-5.5 5.5" /></>,
   rupee: <><path d="M7 5h10M7 9h10M7 5h3.5a4 4 0 0 1 0 8H7l7.5 7" /></>,
+  camera: <><path d="M4 8.5a2 2 0 0 1 2-2h1.8l1.4-2h5.6l1.4 2H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8.5Z" /><circle cx="12" cy="12.5" r="3.3" /></>,
+  mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3.5 6.5 8.5 6.5 8.5-6.5" /></>,
   spark: <><path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6 6l2.6 2.6M15.4 15.4 18 18M18 6l-2.6 2.6M8.6 15.4 6 18" /></>,
 } satisfies Record<string, ReactNode>;
 

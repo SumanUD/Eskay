@@ -11,3 +11,7 @@ industrious-full.png
 .vercel
 .env*
 !.env.example
+
+# Local secrets and client source documents, never committed
+smtp.txt
+Eskay Product Master.docx

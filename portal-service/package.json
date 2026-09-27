@@ -8,5 +8,8 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.mjs",
     "test": "node --disable-warning=ExperimentalWarning --test test/api.test.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^10.0.3"
   }
 }

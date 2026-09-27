@@ -84,6 +84,14 @@ export async function uploadFile(file: File): Promise<UploadedFile> {
   return uploaded;
 }
 
+export async function uploadAvatar<T>(file: File): Promise<T> {
+  return api<T>("/me/avatar", {
+    method: "POST",
+    raw: file,
+    headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" },
+  });
+}
+
 // Files are served only with the session token, so a plain link cannot fetch them. The file is
 // downloaded with the token and then handed to the browser to save.
 export async function downloadFile(path: string, filename: string) {

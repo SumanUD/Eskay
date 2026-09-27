@@ -1,6 +1,5 @@
 export type Role = "admin" | "distributor" | "dealer" | "sales";
 export type Audience = "all" | "distributor" | "dealer";
-export type OrderStatus = "placed" | "confirmed" | "dispatched" | "delivered" | "cancelled";
 
 export type User = {
   id: number;
@@ -18,6 +17,8 @@ export type User = {
   sales_manager: string | null;
   active: boolean;
   must_change_password: boolean;
+  has_avatar: boolean;
+  dealer_count: number;
   created_at: string;
   last_login_at: string | null;
 };
@@ -25,14 +26,19 @@ export type User = {
 export type StateRef = { id: number; name: string };
 export type State = StateRef & { code: string | null; active?: boolean; product_count?: number; user_count?: number };
 
-// Partners receive `price` and `price_label` for their own role only; admins receive both prices.
+// Partners receive `price` and `price_label` for their own role only; admins receive both role
+// prices and the images' file ids. MRP and the retail counter price are the same for everyone.
 export type Product = {
   id: number;
   name: string;
   code: string;
+  brand: string;
   category: string;
   description: string;
   pack_size: string;
+  mrp: number | null;
+  retail_price: number | null;
+  images: number[];
   has_image: boolean;
   states: StateRef[];
   updated_at: string;
@@ -40,8 +46,11 @@ export type Product = {
   price_label?: string;
   distributor_price?: number;
   dealer_price?: number;
+  image_file_ids?: number[];
   active?: boolean;
 };
+
+export type Recipient = { id: number; name: string; role: Role };
 
 export type Material = {
   id: number;
@@ -54,6 +63,8 @@ export type Material = {
   file_mime: string;
   file_size: number;
   created_at: string;
+  recipient_count?: number;
+  recipients?: Recipient[];
 };
 
 export type Scheme = {
@@ -68,32 +79,17 @@ export type Scheme = {
   created_at: string;
 };
 
-export type OrderItem = { id: number; product_id: number | null; product_name: string; product_code: string; quantity: number; unit_price: number; line_total: number };
+export type Contact = { id: number; name: string; organisation: string; email: string; phone: string; address: string; state: string | null; has_avatar: boolean; dealer_count?: number };
 
-export type Order = {
-  id: number;
-  distributor_id: number;
-  distributor: string;
-  distributor_organisation: string;
-  state: string | null;
-  status: OrderStatus;
-  notes: string;
-  total: number;
-  created_at: string;
-  updated_at: string;
-  item_count: number;
-  items?: OrderItem[];
-};
-
-export type Contact = { id: number; name: string; organisation: string; email: string; phone: string; address: string; state: string | null; open_orders?: number; orders?: number };
-
-export type MonthTotal = { month: string; orders: number; value: number };
+export type NetworkRow = { id: number; name: string; distributors: number; dealers: number };
 
 export type Dashboard = {
   counts: Record<string, number>;
-  recent_orders?: Order[];
-  order_value?: number;
   region_filter?: "on" | "off";
-  // Present for every role that has orders; dealers have none.
-  insights?: { status: Record<OrderStatus, number>; monthly: MonthTotal[] };
+  network?: NetworkRow[];
+  recent_partners?: User[];
+  dealers?: Contact[];
+  distributors?: Contact[];
+  distributor?: Contact | null;
+  recent_materials?: Material[];
 };

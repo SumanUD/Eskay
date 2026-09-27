@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiBlob } from "./api";
-import { formatDate, rupees, STATUS_LABEL } from "./format";
 import { Icon, type PortalIconName } from "./icons";
-import type { Contact, Order, OrderStatus, Product } from "./types";
+import type { Contact, Product } from "./types";
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
@@ -66,11 +65,6 @@ export function Stat({ label, value, href, note, icon }: { label: string; value:
   return href ? <Link className="p-stat is-link" href={href}>{body}</Link> : <div className="p-stat">{body}</div>;
 }
 
-/** A dot in the order's step colour beside its name; the colour never carries meaning alone. */
-export function StatusBadge({ status }: { status: OrderStatus }) {
-  return <span className={`p-status status-${status}`}><i aria-hidden="true" />{STATUS_LABEL[status]}</span>;
-}
-
 export function Field({ label, hint, required, children, wide }: { label: string; hint?: string; required?: boolean; children: React.ReactNode; wide?: boolean }) {
   return (
     <label className={wide ? "p-field is-wide" : "p-field"}>
@@ -104,14 +98,14 @@ export function Dialog({ open, onClose, title, children, wide }: { open: boolean
   );
 }
 
-/** Product images are private, so they are fetched with the session token and shown from memory. */
-export function ProductImage({ product, className = "" }: { product: Pick<Product, "id" | "name" | "has_image" | "updated_at">; className?: string }) {
+/** Loads a private file with the session token and shows it from memory. */
+function usePrivateImage(path: string | null) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    if (!product.has_image) return;
+    if (!path) return;
     let live = true;
     let url: string | null = null;
-    apiBlob(`/products/${product.id}/image`).then(
+    apiBlob(path).then(
       (blob) => {
         if (!live) return;
         url = URL.createObjectURL(blob);
@@ -123,17 +117,38 @@ export function ProductImage({ product, className = "" }: { product: Pick<Produc
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [product.id, product.has_image, product.updated_at]);
+  }, [path]);
+  return path ? src : null;
+}
 
-  if (!product.has_image || !src) {
-    return <div className={`p-product-mark ${className}`} aria-hidden="true"><b>{product.name.charAt(0).toUpperCase()}</b></div>;
-  }
+/** A product's cover image, or its initial on the brand's ring pattern when it has none. */
+export function ProductImage({ product, imageId, className = "" }: { product: Pick<Product, "id" | "name" | "has_image" | "images" | "updated_at">; imageId?: number; className?: string }) {
+  const chosen = imageId ?? product.images[0];
+  const src = usePrivateImage(product.has_image && chosen ? `/products/${product.id}/images/${chosen}?v=${encodeURIComponent(product.updated_at)}` : null);
+  if (!src) return <div className={`p-product-mark ${className}`} aria-hidden="true"><b>{product.name.charAt(0).toUpperCase()}</b></div>;
   // eslint-disable-next-line @next/next/no-img-element -- a blob URL cannot go through next/image.
   return <img className={`p-product-img ${className}`} src={src} alt={product.name} />;
 }
 
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+
+/**
+ * A person's picture, or their initials. `source` says whose picture it is from the viewer's
+ * side: their own, one an admin is managing, or a partner linked to them.
+ */
+export function Avatar({ name, hasAvatar, source, id, version, className = "" }: { name: string; hasAvatar: boolean; source: "me" | "user" | "contact"; id?: number; version?: string | number; className?: string }) {
+  const path = !hasAvatar ? null : source === "me" ? "/me/avatar" : source === "user" ? `/users/${id}/avatar` : `/contacts/${id}/avatar`;
+  const src = usePrivateImage(path ? `${path}${version !== undefined ? `?v=${version}` : ""}` : null);
+  return (
+    <span className={`p-avatar ${className}`} aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a blob URL cannot go through next/image. */}
+      {src ? <img src={src} alt="" /> : initials(name)}
+    </span>
+  );
+}
+
 /** Contact details of partners in the viewer's own network. */
-export function ContactTable({ contacts, orders }: { contacts: Contact[]; orders?: boolean }) {
+export function ContactTable({ contacts, showDealerCount }: { contacts: Contact[]; showDealerCount?: boolean }) {
   return (
     <div className="p-table-wrap">
       <table className="p-table">
@@ -142,62 +157,28 @@ export function ContactTable({ contacts, orders }: { contacts: Contact[]; orders
             <th>Name</th>
             <th>Contact</th>
             <th>State</th>
-            {orders && <th className="num">Open orders</th>}
-            {orders && <th className="num">All orders</th>}
+            {showDealerCount && <th className="num">Dealers</th>}
           </tr>
         </thead>
         <tbody>
           {contacts.map((contact) => (
             <tr key={contact.id}>
               <td>
-                <strong>{contact.name}</strong>
-                {contact.organisation && <small className="p-sub">{contact.organisation}</small>}
-                {contact.address && <small className="p-sub">{contact.address}</small>}
+                <span className="p-person">
+                  <Avatar name={contact.name} hasAvatar={contact.has_avatar} source="contact" id={contact.id} className="is-small" />
+                  <span>
+                    <strong>{contact.name}</strong>
+                    {contact.organisation && <small className="p-sub">{contact.organisation}</small>}
+                    {contact.address && <small className="p-sub">{contact.address}</small>}
+                  </span>
+                </span>
               </td>
               <td>
                 <a href={`mailto:${contact.email}`}>{contact.email}</a>
                 {contact.phone && <small className="p-sub"><a href={`tel:${contact.phone.replace(/[^\d+]/g, "")}`}>{contact.phone}</a></small>}
               </td>
               <td>{contact.state ?? "—"}</td>
-              {orders && <td className="num">{contact.open_orders}</td>}
-              {orders && <td className="num">{contact.orders}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export function OrdersTable({ orders, showDistributor }: { orders: Order[]; showDistributor: boolean }) {
-  if (!orders.length) return <EmptyState title="No orders yet">Orders appear here as soon as they are placed.</EmptyState>;
-  return (
-    <div className="p-table-wrap">
-      <table className="p-table">
-        <thead>
-          <tr>
-            <th>Order</th>
-            <th>Date</th>
-            {showDistributor && <th>Distributor</th>}
-            <th className="num">Items</th>
-            <th className="num">Total</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((order) => (
-            <tr key={order.id}>
-              <td><Link className="p-row-link" href={`/portal/order?id=${order.id}`}>#{order.id}</Link></td>
-              <td>{formatDate(order.created_at)}</td>
-              {showDistributor && (
-                <td>
-                  {order.distributor}
-                  {order.distributor_organisation && <small className="p-sub">{order.distributor_organisation}</small>}
-                </td>
-              )}
-              <td className="num">{order.item_count}</td>
-              <td className="num">{rupees(order.total)}</td>
-              <td><StatusBadge status={order.status} /></td>
+              {showDealerCount && <td className="num">{contact.dealer_count ?? 0}</td>}
             </tr>
           ))}
         </tbody>

@@ -2,27 +2,29 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { StatusMix, TrendChart } from "../_lib/charts";
-import { ROLE_LABEL, rupees } from "../_lib/format";
+import { MaterialList } from "../_lib/catalogue";
+import { NetworkChart } from "../_lib/charts";
+import { formatDate, ROLE_LABEL } from "../_lib/format";
 import { Icon } from "../_lib/icons";
 import { useApi, useSession } from "../_lib/session";
-import type { Dashboard, User } from "../_lib/types";
-import { Loading, Notice, OrdersTable, Stat } from "../_lib/ui";
+import type { Contact, Dashboard, User } from "../_lib/types";
+import { Avatar, ContactTable, EmptyState, Loading, Notice, Stat } from "../_lib/ui";
 
 const count = (n: number, word: string) => `${n === 0 ? "no" : n.toLocaleString("en-IN")} ${word}${n === 1 ? "" : "s"}`;
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 // A one-line reading of the numbers below it, in the person's own terms.
 function summary(user: User, data: Dashboard) {
   const c = data.counts;
   switch (user.role) {
     case "admin":
-      return `There ${c.open_orders === 1 ? "is" : "are"} ${count(c.open_orders, "open order")} across ${count(c.distributors, "distributor")} and ${count(c.dealers, "dealer")}.`;
+      return `The network has ${count(c.distributors, "distributor")} and ${count(c.dealers, "dealer")} across ${count(c.states, "state")}, with ${count(c.active_products, "active product")}.`;
     case "sales":
-      return `There ${c.open_orders === 1 ? "is" : "are"} ${count(c.open_orders, "open order")} from the ${count(c.distributors, "distributor")} in your area.`;
+      return `${capital(count(c.distributors, "distributor"))} ${c.distributors === 1 ? "is" : "are"} assigned to you, supplying ${count(c.dealers, "dealer")}.`;
     case "distributor":
-      return `You have ${count(c.open_orders, "order")} in progress and ${count(c.schemes, "scheme")} running for you.`;
+      return `You have ${count(c.dealers, "assigned dealer")}, ${count(c.products, "product")} and ${count(c.schemes, "scheme")} available to you.`;
     default:
-      return `${count(c.products, "product").replace(/^no/, "No")} and ${count(c.schemes, "scheme")} are available to you right now.`;
+      return `${capital(count(c.products, "product"))} and ${count(c.schemes, "scheme")} are available to you right now.`;
   }
 }
 
@@ -74,10 +76,10 @@ export default function DashboardPage() {
   const n = (value: number) => <CountUp value={value} />;
 
   const actions = {
-    admin: <><Link className="p-btn" href="/portal/orders">Review orders</Link><Link className="p-btn is-light" href="/portal/admin/products"><Icon name="plus" />Add a product</Link></>,
-    distributor: <><Link className="p-btn" href="/portal/orders/new"><Icon name="cart" />Place an order</Link><Link className="p-btn is-light" href="/portal/catalogue">Browse the catalogue</Link></>,
-    dealer: <><Link className="p-btn" href="/portal/catalogue">Browse the catalogue</Link><Link className="p-btn is-light" href="/portal/materials"><Icon name="download" />Downloads</Link></>,
-    sales: <Link className="p-btn" href="/portal/orders">View area orders</Link>,
+    admin: <><Link className="p-btn" href="/portal/admin/users"><Icon name="plus" />Add a partner</Link><Link className="p-btn is-light" href="/portal/admin/products">Manage products</Link></>,
+    distributor: <><Link className="p-btn" href="/portal/products">View products</Link><Link className="p-btn is-light" href="/portal/dealers"><Icon name="people" />My dealers</Link></>,
+    dealer: <><Link className="p-btn" href="/portal/products">View products</Link><Link className="p-btn is-light" href="/portal/materials"><Icon name="download" />Downloads</Link></>,
+    sales: <Link className="p-btn" href="/portal/distributors">My distributors</Link>,
   }[user.role];
 
   return (
@@ -100,67 +102,136 @@ export default function DashboardPage() {
       <div className="p-stats">
         {user.role === "admin" && (
           <>
-            <Stat icon="orders" label="Open orders" value={n(c.open_orders)} href="/portal/orders" />
-            <Stat icon="box" label="Active products" value={n(c.active_products)} note={`${c.products} in the catalogue`} href="/portal/admin/products" />
-            <Stat icon="truck" label="Distributors" value={n(c.distributors)} href="/portal/admin/users" />
-            <Stat icon="people" label="Dealers" value={n(c.dealers)} href="/portal/admin/users" />
-            <Stat icon="user" label="Sales managers" value={n(c.sales)} href="/portal/admin/users" />
-            <Stat icon="pin" label="States" value={n(c.states)} href="/portal/admin/states" />
+            <Stat icon="truck" label="Distributors" value={n(c.distributors)} href="/portal/admin/users?role=distributor" />
+            <Stat icon="people" label="Dealers" value={n(c.dealers)} href="/portal/admin/users?role=dealer" />
+            <Stat icon="user" label="Sales managers" value={n(c.sales)} href="/portal/admin/users?role=sales" />
+            <Stat icon="box" label="Active products" value={n(c.active_products)} note={`${c.products} in total`} href="/portal/admin/products" />
+            <Stat icon="tag" label="Schemes running" value={n(c.schemes)} href="/portal/admin/schemes" />
+            <Stat icon="download" label="Materials" value={n(c.materials)} href="/portal/admin/materials" />
           </>
         )}
         {user.role === "distributor" && (
           <>
-            <Stat icon="orders" label="Orders in progress" value={n(c.open_orders)} href="/portal/orders" />
-            <Stat icon="rupee" label="Order value" value={<CountUp value={data.order_value ?? 0} format={rupees} />} note={`From ${c.orders} orders, excluding cancelled`} href="/portal/orders" />
-            <Stat icon="catalogue" label="Products available" value={n(c.products)} href="/portal/catalogue" />
             <Stat icon="people" label="Assigned dealers" value={n(c.dealers)} href="/portal/dealers" />
+            <Stat icon="box" label="Products available" value={n(c.products)} href="/portal/products" />
             <Stat icon="tag" label="Schemes running" value={n(c.schemes)} href="/portal/schemes" />
             <Stat icon="download" label="Downloads" value={n(c.materials)} href="/portal/materials" />
           </>
         )}
         {user.role === "sales" && (
           <>
-            <Stat icon="orders" label="Open orders" value={n(c.open_orders)} href="/portal/orders" />
             <Stat icon="truck" label="My distributors" value={n(c.distributors)} href="/portal/distributors" />
-            <Stat icon="dashboard" label="All orders" value={n(c.orders)} href="/portal/orders" />
+            <Stat icon="people" label="Their dealers" value={n(c.dealers)} href="/portal/distributors" />
           </>
         )}
         {user.role === "dealer" && (
           <>
-            <Stat icon="catalogue" label="Products available" value={n(c.products)} href="/portal/catalogue" />
+            <Stat icon="box" label="Products available" value={n(c.products)} href="/portal/products" />
             <Stat icon="tag" label="Schemes running" value={n(c.schemes)} href="/portal/schemes" />
             <Stat icon="download" label="Downloads" value={n(c.materials)} href="/portal/materials" />
           </>
         )}
       </div>
 
+      {user.role === "admin" && c.awaiting_first_sign_in > 0 && (
+        <Notice tone="warning">
+          {capital(count(c.awaiting_first_sign_in, "partner account"))} {c.awaiting_first_sign_in === 1 ? "has" : "have"} not signed in for the first time yet. <Link href="/portal/admin/users">Review accounts</Link>
+        </Notice>
+      )}
+
       {user.role === "admin" && (
         <div className={`p-region-note ${data.region_filter === "on" ? "is-on" : ""}`}>
           <Icon name="pin" />
           <p>
-            <strong>Regional catalogue is {data.region_filter === "on" ? "on" : "off"}.</strong>{" "}
+            <strong>Regional products are {data.region_filter === "on" ? "on" : "off"}.</strong>{" "}
             {data.region_filter === "on" ? "Partners see only products flagged for their state." : "Region flags are recorded, but every partner currently sees every active product."}
           </p>
           <Link href="/portal/admin/settings">Settings</Link>
         </div>
       )}
 
-      {data.insights && (
+      {user.role === "admin" && (
         <div className="p-dash-charts">
-          <TrendChart months={data.insights.monthly} />
-          <StatusMix status={data.insights.status} />
+          <NetworkChart rows={data.network ?? []} />
+          <section className="p-card p-recent">
+            <div className="p-section-head">
+              <h2>Newest partners</h2>
+              <Link href="/portal/admin/users">All partners</Link>
+            </div>
+            {data.recent_partners?.length ? (
+              <ul className="p-people">
+                {data.recent_partners.map((partner) => (
+                  <li key={partner.id}>
+                    <Avatar name={partner.name} hasAvatar={partner.has_avatar} source="user" id={partner.id} className="is-small" />
+                    <span>
+                      <strong>{partner.name}</strong>
+                      <small>{ROLE_LABEL[partner.role]}{partner.state && ` · ${partner.state}`}{partner.role === "dealer" && partner.distributor && ` · under ${partner.distributor}`}</small>
+                    </span>
+                    <span className="p-people-date">
+                      <small>Added {formatDate(partner.created_at)}</small>
+                      {!partner.last_login_at && <span className="p-badge is-muted">Not signed in yet</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="p-chart-empty">No partners yet. Add distributors first, then the dealers under them.</p>
+            )}
+          </section>
         </div>
       )}
 
-      {data.recent_orders && (
+      {user.role === "dealer" && <DistributorCard distributor={data.distributor ?? null} />}
+
+      {user.role === "distributor" && (
         <section className="p-section">
           <div className="p-section-head">
-            <h2>Recent orders</h2>
-            <Link href="/portal/orders">All orders</Link>
+            <h2>Your dealers</h2>
+            {(c.dealers ?? 0) > 0 && <Link href="/portal/dealers">All {c.dealers} dealers</Link>}
           </div>
-          <OrdersTable orders={data.recent_orders} showDistributor={user.role !== "distributor"} />
+          {data.dealers?.length ? <ContactTable contacts={data.dealers} /> : <EmptyState title="No dealers assigned yet">When ESKAY assigns dealers to you, they will appear here.</EmptyState>}
+        </section>
+      )}
+
+      {user.role === "sales" && (
+        <section className="p-section">
+          <div className="p-section-head">
+            <h2>Your distributors</h2>
+            {(c.distributors ?? 0) > 0 && <Link href="/portal/distributors">View all</Link>}
+          </div>
+          {data.distributors?.length ? <ContactTable contacts={data.distributors} showDealerCount /> : <EmptyState title="No distributors assigned yet">When ESKAY assigns distributors to you, they will appear here.</EmptyState>}
+        </section>
+      )}
+
+      {(user.role === "distributor" || user.role === "dealer") && (
+        <section className="p-section">
+          <div className="p-section-head">
+            <h2>Latest downloads</h2>
+            {(c.materials ?? 0) > 0 && <Link href="/portal/materials">All downloads</Link>}
+          </div>
+          {data.recent_materials?.length ? <MaterialList materials={data.recent_materials} /> : <p className="p-muted">Material ESKAY shares with you will appear here.</p>}
         </section>
       )}
     </div>
+  );
+}
+
+// A dealer's one contact at the next level up: who supplies them.
+function DistributorCard({ distributor }: { distributor: Contact | null }) {
+  if (!distributor) return <Notice tone="info">You have not been assigned to a distributor yet. Please contact ESKAY.</Notice>;
+  return (
+    <section className="p-card p-contact-card">
+      <Avatar name={distributor.name} hasAvatar={distributor.has_avatar} source="contact" id={distributor.id} className="is-large" />
+      <div>
+        <p className="p-eyebrow">Your distributor</p>
+        <h2>{distributor.name}</h2>
+        {distributor.organisation && <p>{distributor.organisation}</p>}
+        <p className="p-meta-row">
+          <a href={`mailto:${distributor.email}`}><Icon name="mail" />{distributor.email}</a>
+          {distributor.phone && <a href={`tel:${distributor.phone.replace(/[^\d+]/g, "")}`}>{distributor.phone}</a>}
+          {distributor.state && <span><Icon name="pin" />{distributor.state}</span>}
+        </p>
+      </div>
+    </section>
   );
 }

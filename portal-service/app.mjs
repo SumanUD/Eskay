@@ -4,22 +4,21 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DUMMY_HASH, hashPassword, hashToken, newToken, passwordProblem, temporaryPassword, verifyPassword } from "./auth.mjs";
 import { transaction } from "./db.mjs";
+import * as emails from "./emails.mjs";
 
 export const PREFIX = "/v1/portal";
 
 const ROLES = ["admin", "distributor", "dealer", "sales"];
-const ORDER_STATUSES = ["placed", "confirmed", "dispatched", "delivered", "cancelled"];
-const OPEN_STATUSES = "('placed', 'confirmed', 'dispatched')";
+const PARTNER_ROLES = ["distributor", "dealer"];
 const AUDIENCES = ["all", "distributor", "dealer"];
 const PRICE_LABEL = { distributor: "Distributor price", dealer: "Dealer price" };
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_JSON = 64 * 1024;
 const MAX_UPLOAD = 25 * 1024 * 1024;
-// Caps chosen so the largest possible order total stays inside Number.MAX_SAFE_INTEGER.
+const MAX_AVATAR = 5 * 1024 * 1024;
 const MAX_PRICE_PAISE = 100_000_000;
-const MAX_QUANTITY = 100_000;
-const MAX_ORDER_LINES = 100;
+const MAX_PRODUCT_IMAGES = 8;
 const NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')";
 // Scheme dates are Indian calendar days, so "today" is evaluated in IST rather than UTC.
 const TODAY_IST = "date('now', '+330 minutes')";
@@ -27,12 +26,15 @@ const TODAY_IST = "date('now', '+330 minutes')";
 // The MIME type served back is decided here from the extension, never taken from the upload,
 // and the first bytes must match it, so a renamed HTML or script file cannot be stored.
 const isZip = (b) => b[0] === 0x50 && b[1] === 0x4b;
-const UPLOAD_TYPES = {
-  pdf: { mime: "application/pdf", check: (b) => b.subarray(0, 5).toString("latin1") === "%PDF-" },
+const IMAGE_TYPES = {
   png: { mime: "image/png", check: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   jpg: { mime: "image/jpeg", check: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   jpeg: { mime: "image/jpeg", check: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   webp: { mime: "image/webp", check: (b) => b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP" },
+};
+const UPLOAD_TYPES = {
+  ...IMAGE_TYPES,
+  pdf: { mime: "application/pdf", check: (b) => b.subarray(0, 5).toString("latin1") === "%PDF-" },
   docx: { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", check: isZip },
   xlsx: { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", check: isZip },
   pptx: { mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", check: isZip },
@@ -78,6 +80,7 @@ function paise(value, field) {
   if (!Number.isSafeInteger(value) || value < 0 || value > MAX_PRICE_PAISE) fail(400, `${field} must be between ₹0 and ₹${(MAX_PRICE_PAISE / 100).toLocaleString("en-IN")}.`);
   return value;
 }
+const optionalPaise = (value, field) => (value === null || value === undefined || value === "" ? null : paise(value, field));
 function flag(value, field) {
   if (typeof value !== "boolean") fail(400, `${field} must be true or false.`);
   return value ? 1 : 0;
@@ -87,12 +90,20 @@ function optionalId(value, field) {
   if (!Number.isSafeInteger(value) || value < 1) fail(400, `${field} is not valid.`);
   return value;
 }
+function idList(value, field) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) fail(400, `${field} must be a list.`);
+  const ids = value.map((item) => optionalId(item, field));
+  if (ids.includes(null)) fail(400, `${field} is not valid.`);
+  return [...new Set(ids)];
+}
 function day(value, field) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) fail(400, `${field} must be a date.`);
   return value;
 }
 const oneOf = (value, allowed, message) => (allowed.includes(value) ? value : fail(400, message));
+const placeholders = (list) => list.map(() => "?").join(", ");
 
 const isUniqueViolation = (error) => /UNIQUE constraint failed/.test(error?.message ?? "");
 const isForeignKeyViolation = (error) => /FOREIGN KEY constraint failed/.test(error?.message ?? "");
@@ -141,7 +152,9 @@ function clientAddress(request) {
   return (request.headers["x-forwarded-for"]?.split(",").pop()?.trim() || request.socket.remoteAddress || "unknown").slice(0, 100);
 }
 
-export function createPortal({ db, filesDir, origins, now = () => Date.now() }) {
+const silentMailer = { enabled: false, async send() {} };
+
+export function createPortal({ db, filesDir, origins, mailer = silentMailer, portalUrl = "https://eskaylife.com", now = () => Date.now() }) {
   const routes = [];
   const route = (method, pattern, roles, handler) => {
     const regex = new RegExp(`^${pattern.replace(/:(\w+)/g, "(?<$1>\\d+)")}$`);
@@ -164,8 +177,23 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
   }
   function insert(table, fields) {
     const keys = Object.keys(fields);
-    return Number(run(`INSERT INTO ${table} (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`, ...keys.map((key) => fields[key])).lastInsertRowid);
+    return Number(run(`INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders(keys)})`, ...keys.map((key) => fields[key])).lastInsertRowid);
   }
+
+  // ---------- Notifications ----------
+
+  // Mail is sent after the request has answered and never holds it up; a delivery failure is
+  // logged rather than surfaced, because the change it describes has already been saved.
+  const pendingMail = new Set();
+  function notify(message) {
+    if (!message?.to) return;
+    const delivery = Promise.resolve()
+      .then(() => mailer.send(message))
+      .catch((error) => console.error("Notification email failed", { subject: message.subject, message: error?.message }))
+      .finally(() => pendingMail.delete(delivery));
+    pendingMail.add(delivery);
+  }
+  const flushMail = () => Promise.allSettled([...pendingMail]);
 
   // ---------- Sign-in rate limiting ----------
 
@@ -203,15 +231,16 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     SELECT u.id, u.role, u.email, u.name, u.organisation, u.phone, u.address,
            u.state_id, s.name AS state, u.distributor_id, d.name AS distributor,
            u.sales_manager_id, m.name AS sales_manager, u.active, u.must_change_password,
-           u.created_at, u.last_login_at
+           u.avatar_file_id IS NOT NULL AS has_avatar, u.created_at, u.last_login_at,
+           (SELECT COUNT(*) FROM users x WHERE x.distributor_id = u.id AND x.role = 'dealer' AND x.active = 1) AS dealer_count
     FROM users u
     LEFT JOIN states s ON s.id = u.state_id
     LEFT JOIN users d ON d.id = u.distributor_id
     LEFT JOIN users m ON m.id = u.sales_manager_id`;
-  const shapeUser = (row) => row && { ...row, active: Boolean(row.active), must_change_password: Boolean(row.must_change_password) };
+  const shapeUser = (row) => row && { ...row, active: Boolean(row.active), must_change_password: Boolean(row.must_change_password), has_avatar: Boolean(row.has_avatar) };
   const getUser = (id) => shapeUser(one(`${USER_SELECT} WHERE u.id = ?`, id));
   // The fields one partner may see about another: contact details only, no account internals.
-  const contact = (row) => ({ id: row.id, name: row.name, organisation: row.organisation, email: row.email, phone: row.phone, address: row.address, state: row.state });
+  const contact = (row) => ({ id: row.id, name: row.name, organisation: row.organisation, email: row.email, phone: row.phone, address: row.address, state: row.state, has_avatar: Boolean(row.has_avatar) });
 
   // ---------- Product visibility ----------
 
@@ -232,39 +261,53 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
   }
   function visibleProducts(user, extra = "", extraParams = []) {
     const scope = productScope(user);
-    return all(`SELECT p.* FROM products p WHERE ${scope.where} ${extra} ORDER BY p.category COLLATE NOCASE, p.name COLLATE NOCASE`, ...scope.params, ...extraParams);
+    return all(`SELECT p.* FROM products p WHERE ${scope.where} ${extra} ORDER BY p.brand COLLATE NOCASE, p.name COLLATE NOCASE`, ...scope.params, ...extraParams);
   }
   const visibleProduct = (user, id) => visibleProducts(user, "AND p.id = ?", [id])[0];
 
-  function statesFor(productIds) {
-    const byProduct = new Map(productIds.map((id) => [id, []]));
-    if (!productIds.length) return byProduct;
-    const rows = all("SELECT ps.product_id, s.id, s.name FROM product_states ps JOIN states s ON s.id = ps.state_id ORDER BY s.name COLLATE NOCASE");
-    for (const row of rows) byProduct.get(row.product_id)?.push({ id: row.id, name: row.name });
-    return byProduct;
+  function groupBy(rows, key) {
+    const map = new Map();
+    for (const row of rows) {
+      if (!map.has(row[key])) map.set(row[key], []);
+      map.get(row[key]).push(row);
+    }
+    return map;
+  }
+  function productExtras(productIds) {
+    if (!productIds.length) return { states: new Map(), images: new Map() };
+    const ids = placeholders(productIds);
+    return {
+      states: groupBy(all(`SELECT ps.product_id, s.id, s.name FROM product_states ps JOIN states s ON s.id = ps.state_id WHERE ps.product_id IN (${ids}) ORDER BY s.name COLLATE NOCASE`, ...productIds), "product_id"),
+      images: groupBy(all(`SELECT id, product_id, file_id FROM product_images WHERE product_id IN (${ids}) ORDER BY position, id`, ...productIds), "product_id"),
+    };
   }
 
   // Each role receives only its own price. The other price is not hidden in the payload, it is
-  // never added to it, so it cannot be read from the network tab.
-  function shapeProduct(row, user, states) {
+  // never added to it, so it cannot be read from the network tab. MRP and the retail counter
+  // price are the same for everyone.
+  function shapeProduct(row, user, extras) {
+    const images = extras.images.get(row.id) ?? [];
     const base = {
-      id: row.id, name: row.name, code: row.code, category: row.category, description: row.description,
-      pack_size: row.pack_size, has_image: Boolean(row.image_file_id), states: states ?? [], updated_at: row.updated_at,
+      id: row.id, name: row.name, code: row.code, brand: row.brand, category: row.category, description: row.description,
+      pack_size: row.pack_size, mrp: row.mrp, retail_price: row.retail_price,
+      images: images.map((image) => image.id), has_image: images.length > 0,
+      states: (extras.states.get(row.id) ?? []).map(({ id, name }) => ({ id, name })), updated_at: row.updated_at,
     };
-    if (user.role === "admin") return { ...base, distributor_price: row.distributor_price, dealer_price: row.dealer_price, active: Boolean(row.active) };
+    if (user.role === "admin") {
+      return { ...base, image_file_ids: images.map((image) => image.file_id), distributor_price: row.distributor_price, dealer_price: row.dealer_price, active: Boolean(row.active) };
+    }
     return { ...base, price: row[`${user.role}_price`], price_label: PRICE_LABEL[user.role] };
   }
   function shapeProducts(rows, user) {
-    const states = statesFor(rows.map((row) => row.id));
-    return rows.map((row) => shapeProduct(row, user, states.get(row.id)));
+    const extras = productExtras(rows.map((row) => row.id));
+    return rows.map((row) => shapeProduct(row, user, extras));
   }
 
   function stateList(value) {
     if (!Array.isArray(value) || !value.length) fail(400, "Choose at least one state for this product.");
-    const ids = [...new Set(value.map((item) => optionalId(item, "State")))];
-    if (ids.includes(null)) fail(400, "Choose at least one state for this product.");
-    const found = count(`SELECT COUNT(*) AS n FROM states WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
-    if (found !== ids.length) fail(400, "One of the selected states no longer exists.");
+    const ids = idList(value, "State");
+    if (!ids.length) fail(400, "Choose at least one state for this product.");
+    if (count(`SELECT COUNT(*) AS n FROM states WHERE id IN (${placeholders(ids)})`, ...ids) !== ids.length) fail(400, "One of the selected states no longer exists.");
     return ids;
   }
   function setProductStates(productId, stateIds) {
@@ -274,22 +317,47 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
 
   // ---------- Files ----------
 
-  function imageFile(value) {
-    const fileId = optionalId(value, "Image");
-    if (fileId === null) return null;
-    const file = one("SELECT mime FROM files WHERE id = ?", fileId);
-    if (!file) fail(400, "The uploaded image could not be found.");
-    if (!file.mime.startsWith("image/")) fail(400, "Product images must be PNG, JPEG or WebP.");
-    return fileId;
+  function imageFiles(value) {
+    const ids = idList(value, "Image");
+    if (ids.length > MAX_PRODUCT_IMAGES) fail(400, `A product can have up to ${MAX_PRODUCT_IMAGES} images.`);
+    for (const fileId of ids) {
+      const file = one("SELECT mime FROM files WHERE id = ?", fileId);
+      if (!file) fail(400, "One of the uploaded images could not be found.");
+      if (!file.mime.startsWith("image/")) fail(400, "Product images must be PNG, JPEG or WebP.");
+    }
+    return ids;
   }
   async function removeFileIfUnused(fileId) {
     if (!fileId) return;
-    const used = count("SELECT (SELECT COUNT(*) FROM products WHERE image_file_id = ?) + (SELECT COUNT(*) FROM materials WHERE file_id = ?) AS n", fileId, fileId);
+    const used = count(`SELECT (SELECT COUNT(*) FROM product_images WHERE file_id = ?) + (SELECT COUNT(*) FROM materials WHERE file_id = ?)
+      + (SELECT COUNT(*) FROM users WHERE avatar_file_id = ?) AS n`, fileId, fileId, fileId);
     if (used) return;
     const file = one("SELECT stored_name FROM files WHERE id = ?", fileId);
     if (!file) return;
     run("DELETE FROM files WHERE id = ?", fileId);
     await rm(join(filesDir, file.stored_name), { force: true });
+  }
+  async function storeFile(name, data, types) {
+    const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+    const type = Object.hasOwn(types, extension) ? types[extension] : null;
+    if (!type) return null;
+    if (!data.length) fail(400, "The file is empty.");
+    if (!type.check(data)) fail(415, `This file does not look like a real .${extension} file.`);
+    const storedName = `${randomBytes(16).toString("hex")}.${extension}`;
+    await writeFile(join(filesDir, storedName), data, { flag: "wx" });
+    const id = insert("files", { stored_name: storedName, original_name: name, mime: type.mime, size: data.length });
+    return { id, original_name: name, mime: type.mime, size: data.length };
+  }
+  function uploadName(request, fallback) {
+    let name;
+    try {
+      name = decodeURIComponent(String(request.headers["x-file-name"] ?? fallback));
+    } catch {
+      fail(400, "The file name could not be read.");
+    }
+    name = name.replace(/[\\/\r\n\0]/g, "_").trim().slice(-150);
+    if (!name) fail(400, "A file name is required.");
+    return name;
   }
   function sendFile(response, file, { download }) {
     response.writeHead(200, {
@@ -315,7 +383,8 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
   // admin abandons a form. Anything unreferenced for a day is removed.
   async function sweepOrphanFiles() {
     const orphans = all(`SELECT id FROM files WHERE created_at < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day')
-      AND id NOT IN (SELECT image_file_id FROM products WHERE image_file_id IS NOT NULL) AND id NOT IN (SELECT file_id FROM materials)`);
+      AND id NOT IN (SELECT file_id FROM product_images) AND id NOT IN (SELECT file_id FROM materials)
+      AND id NOT IN (SELECT avatar_file_id FROM users WHERE avatar_file_id IS NOT NULL)`);
     for (const { id } of orphans) await removeFileIfUnused(id);
     return orphans.length;
   }
@@ -354,14 +423,21 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
 
   route("GET", "/me", "*", ({ user }) => [200, { user: getUser(user.id) }]);
 
-  route("PATCH", "/me", "*", async ({ request, user }) => {
+  // Partners' details, email and region are managed by ESKAY; a partner's own profile only lets
+  // them change their password and picture. Admins keep their details editable here.
+  route("PATCH", "/me", ["admin"], async ({ request, user }) => {
     const body = await readJson(request);
     const fields = {};
     if ("name" in body) fields.name = text(body.name, "Name", 2, 100);
     if ("organisation" in body) fields.organisation = text(body.organisation, "Organisation", 0, 120);
     if ("phone" in body) fields.phone = phone(body.phone);
     if ("address" in body) fields.address = text(body.address, "Address", 0, 300);
-    update("users", user.id, fields);
+    if ("email" in body) fields.email = email(body.email);
+    try {
+      update("users", user.id, fields);
+    } catch (error) {
+      return userConflict(error);
+    }
     return [200, { user: getUser(user.id) }];
   });
 
@@ -378,71 +454,28 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     return [200, { user: getUser(user.id) }];
   });
 
-  // ---------- Dashboard ----------
-
-  // Where a role's orders stand and how their value has moved, for the dashboard charts. Months
-  // are Indian calendar months; the value and order count exclude cancelled orders.
-  function orderInsights(user) {
-    const scope = orderScope(user);
-    const status = Object.fromEntries(ORDER_STATUSES.map((name) => [name, 0]));
-    for (const row of all(`SELECT o.status, COUNT(*) AS n FROM orders o JOIN users d ON d.id = o.distributor_id WHERE ${scope.where} GROUP BY o.status`, ...scope.params)) status[row.status] = row.n;
-
-    const today = new Date(now() + 330 * 60 * 1000);
-    const months = Array.from({ length: 6 }, (_, index) => new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5 + index, 1)).toISOString().slice(0, 7));
-    const since = new Date(Date.parse(`${months[0]}-01T00:00:00Z`) - 330 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const totals = new Map(all(`SELECT strftime('%Y-%m', o.created_at, '+330 minutes') AS month, COUNT(*) AS orders, SUM(o.total) AS value
-      FROM orders o JOIN users d ON d.id = o.distributor_id
-      WHERE ${scope.where} AND o.status <> 'cancelled' AND o.created_at >= ? GROUP BY month`, ...scope.params, since).map((row) => [row.month, row]));
-    return { status, monthly: months.map((month) => ({ month, orders: totals.get(month)?.orders ?? 0, value: totals.get(month)?.value ?? 0 })) };
-  }
-
-  route("GET", "/dashboard", "*", ({ user }) => {
-    const recent = (where, ...params) => all(`${ORDER_SELECT} WHERE ${where} ORDER BY o.id DESC LIMIT 5`, ...params);
-    if (user.role === "admin") {
-      return [200, {
-        counts: {
-          products: count("SELECT COUNT(*) AS n FROM products"),
-          active_products: count("SELECT COUNT(*) AS n FROM products WHERE active = 1"),
-          distributors: count("SELECT COUNT(*) AS n FROM users WHERE role = 'distributor' AND active = 1"),
-          dealers: count("SELECT COUNT(*) AS n FROM users WHERE role = 'dealer' AND active = 1"),
-          sales: count("SELECT COUNT(*) AS n FROM users WHERE role = 'sales' AND active = 1"),
-          states: count("SELECT COUNT(*) AS n FROM states WHERE active = 1"),
-          open_orders: count(`SELECT COUNT(*) AS n FROM orders WHERE status IN ${OPEN_STATUSES}`),
-        },
-        recent_orders: recent("1 = 1"),
-        region_filter: regionFilterOn() ? "on" : "off",
-        insights: orderInsights(user),
-      }];
-    }
-    if (user.role === "sales") {
-      return [200, {
-        counts: {
-          distributors: count("SELECT COUNT(*) AS n FROM users WHERE role = 'distributor' AND active = 1 AND sales_manager_id = ?", user.id),
-          open_orders: count(`SELECT COUNT(*) AS n FROM orders o JOIN users d ON d.id = o.distributor_id WHERE d.sales_manager_id = ? AND o.status IN ${OPEN_STATUSES}`, user.id),
-          orders: count("SELECT COUNT(*) AS n FROM orders o JOIN users d ON d.id = o.distributor_id WHERE d.sales_manager_id = ?", user.id),
-        },
-        recent_orders: recent("d.sales_manager_id = ?", user.id),
-        insights: orderInsights(user),
-      }];
-    }
-    const counts = {
-      products: visibleProducts(user).length,
-      schemes: count(`SELECT COUNT(*) AS n FROM schemes sc WHERE ${schemeScope(user).where}`, ...schemeScope(user).params),
-      materials: count(`SELECT COUNT(*) AS n FROM materials m WHERE ${materialScope(user).where}`, ...materialScope(user).params),
-    };
-    if (user.role === "dealer") return [200, { counts }];
-    return [200, {
-      counts: {
-        ...counts,
-        dealers: count("SELECT COUNT(*) AS n FROM users WHERE role = 'dealer' AND active = 1 AND distributor_id = ?", user.id),
-        open_orders: count(`SELECT COUNT(*) AS n FROM orders WHERE distributor_id = ? AND status IN ${OPEN_STATUSES}`, user.id),
-        orders: count("SELECT COUNT(*) AS n FROM orders WHERE distributor_id = ?", user.id),
-      },
-      order_value: count("SELECT COALESCE(SUM(total), 0) AS n FROM orders WHERE distributor_id = ? AND status <> 'cancelled'", user.id),
-      recent_orders: recent("o.distributor_id = ?", user.id),
-      insights: orderInsights(user),
-    }];
+  route("POST", "/me/avatar", "*", async ({ request, user }) => {
+    const name = uploadName(request, "avatar.png");
+    const stored = await storeFile(name, await readRaw(request, MAX_AVATAR), IMAGE_TYPES);
+    if (!stored) fail(415, "Profile pictures must be PNG, JPEG or WebP.");
+    run("UPDATE users SET avatar_file_id = ? WHERE id = ?", stored.id, user.id);
+    await removeFileIfUnused(user.avatar_file_id);
+    return [200, { user: getUser(user.id) }];
   });
+
+  route("DELETE", "/me/avatar", "*", async ({ user }) => {
+    run("UPDATE users SET avatar_file_id = NULL WHERE id = ?", user.id);
+    await removeFileIfUnused(user.avatar_file_id);
+    return [200, { user: getUser(user.id) }];
+  });
+
+  const serveAvatar = (response, userId) => {
+    const file = one("SELECT f.* FROM users u JOIN files f ON f.id = u.avatar_file_id WHERE u.id = ?", userId);
+    if (!file) fail(404, "No profile picture.");
+    sendFile(response, file, { download: false });
+  };
+  route("GET", "/me/avatar", "*", ({ user, response }) => serveAvatar(response, user.id));
+  route("GET", "/users/:id/avatar", ["admin"], ({ params, response }) => serveAvatar(response, params.id));
 
   // ---------- States ----------
 
@@ -508,43 +541,53 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     if (!row) fail(404, "Product not found.");
     const scope = materialScope(user);
     const materials = all(`${MATERIAL_SELECT} WHERE m.product_id = ? AND ${scope.where} ORDER BY m.title COLLATE NOCASE`, params.id, ...scope.params);
-    return [200, { product: shapeProduct(row, user, statesFor([row.id]).get(row.id)), materials }];
+    return [200, { product: shapeProduct(row, user, productExtras([row.id])), materials }];
   });
 
-  route("GET", "/products/:id/image", CATALOGUE_ROLES, ({ user, params, response }) => {
-    const row = visibleProduct(user, params.id);
-    const file = row?.image_file_id && one("SELECT * FROM files WHERE id = ?", row.image_file_id);
+  function sendProductImage(user, productId, imageId, response) {
+    if (!visibleProduct(user, productId)) fail(404, "Image not found.");
+    const file = imageId
+      ? one("SELECT f.* FROM product_images i JOIN files f ON f.id = i.file_id WHERE i.id = ? AND i.product_id = ?", imageId, productId)
+      : one("SELECT f.* FROM product_images i JOIN files f ON f.id = i.file_id WHERE i.product_id = ? ORDER BY i.position, i.id LIMIT 1", productId);
     if (!file) fail(404, "Image not found.");
     sendFile(response, file, { download: false });
-  });
+  }
+  route("GET", "/products/:id/image", CATALOGUE_ROLES, ({ user, params, response }) => sendProductImage(user, params.id, null, response));
+  route("GET", "/products/:id/images/:image", CATALOGUE_ROLES, ({ user, params, response }) => sendProductImage(user, params.id, params.image, response));
 
   function productFields(body, partial) {
     const fields = {};
     const needs = (key) => !partial || key in body;
     if (needs("name")) fields.name = text(body.name, "Product name", 2, 120);
     if (needs("code")) fields.code = text(body.code, "Product code", 1, 40).toUpperCase();
+    if ("brand" in body) fields.brand = text(body.brand, "Brand", 0, 80);
     if ("category" in body) fields.category = text(body.category, "Category", 0, 60);
     if ("description" in body) fields.description = text(body.description, "Description", 0, 5000);
-    if ("pack_size" in body) fields.pack_size = text(body.pack_size, "Pack size", 0, 60);
+    if ("pack_size" in body) fields.pack_size = text(body.pack_size, "Pack size", 0, 120);
     if (needs("distributor_price")) fields.distributor_price = paise(body.distributor_price, "Distributor price");
     if (needs("dealer_price")) fields.dealer_price = paise(body.dealer_price, "Dealer price");
+    if ("mrp" in body) fields.mrp = optionalPaise(body.mrp, "MRP");
+    if ("retail_price" in body) fields.retail_price = optionalPaise(body.retail_price, "Retail counter price");
     if ("active" in body) fields.active = flag(body.active, "Active");
-    if ("image_file_id" in body) fields.image_file_id = imageFile(body.image_file_id);
     const stateIds = needs("state_ids") ? stateList(body.state_ids) : undefined;
-    return { fields, stateIds };
+    const imageIds = "image_file_ids" in body ? imageFiles(body.image_file_ids) : undefined;
+    return { fields, stateIds, imageIds };
+  }
+  function setProductImages(productId, fileIds) {
+    run("DELETE FROM product_images WHERE product_id = ?", productId);
+    fileIds.forEach((fileId, position) => run("INSERT INTO product_images (product_id, file_id, position) VALUES (?, ?, ?)", productId, fileId, position));
   }
   const productConflict = (error) => (isUniqueViolation(error) ? fail(409, "A product with this code already exists.") : Promise.reject(error));
-  const adminProduct = (id) => {
-    const row = one("SELECT * FROM products WHERE id = ?", id);
-    return shapeProduct(row, { role: "admin" }, statesFor([id]).get(id));
-  };
+  const adminProduct = (id) => shapeProduct(one("SELECT * FROM products WHERE id = ?", id), { role: "admin" }, productExtras([id]));
+  const productFileIds = (id) => all("SELECT file_id FROM product_images WHERE product_id = ?", id).map((row) => row.file_id);
 
   route("POST", "/products", ["admin"], async ({ request }) => {
-    const { fields, stateIds } = productFields(await readJson(request), false);
+    const { fields, stateIds, imageIds } = productFields(await readJson(request), false);
     try {
       const id = transaction(db, () => {
         const productId = insert("products", fields);
         setProductStates(productId, stateIds);
+        if (imageIds) setProductImages(productId, imageIds);
         return productId;
       });
       return [201, { product: adminProduct(id) }];
@@ -554,75 +597,76 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
   });
 
   route("PATCH", "/products/:id", ["admin"], async ({ request, params }) => {
-    const existing = one("SELECT image_file_id FROM products WHERE id = ?", params.id);
-    if (!existing) fail(404, "Product not found.");
-    const { fields, stateIds } = productFields(await readJson(request), true);
+    if (!one("SELECT id FROM products WHERE id = ?", params.id)) fail(404, "Product not found.");
+    const { fields, stateIds, imageIds } = productFields(await readJson(request), true);
+    const previousFiles = productFileIds(params.id);
     try {
       transaction(db, () => {
         update("products", params.id, fields, { touch: true });
         if (stateIds) setProductStates(params.id, stateIds);
+        if (imageIds) setProductImages(params.id, imageIds);
       });
     } catch (error) {
       return productConflict(error);
     }
-    if ("image_file_id" in fields && fields.image_file_id !== existing.image_file_id) await removeFileIfUnused(existing.image_file_id);
+    if (imageIds) for (const fileId of previousFiles) if (!imageIds.includes(fileId)) await removeFileIfUnused(fileId);
     return [200, { product: adminProduct(params.id) }];
   });
 
   route("DELETE", "/products/:id", ["admin"], async ({ params }) => {
-    const existing = one("SELECT image_file_id FROM products WHERE id = ?", params.id);
-    if (!existing) fail(404, "Product not found.");
-    // Past orders keep their copied name, code and price; only the link to the product is cleared.
+    if (!one("SELECT id FROM products WHERE id = ?", params.id)) fail(404, "Product not found.");
+    const files = productFileIds(params.id);
     run("DELETE FROM products WHERE id = ?", params.id);
-    await removeFileIfUnused(existing.image_file_id);
+    for (const fileId of files) await removeFileIfUnused(fileId);
     return [200, { ok: true }];
   });
 
-  // ---------- Uploads ----------
+  // ---------- Uploads (admin) ----------
 
   route("POST", "/files", ["admin"], async ({ request }) => {
-    let name;
-    try {
-      name = decodeURIComponent(String(request.headers["x-file-name"] ?? ""));
-    } catch {
-      fail(400, "The file name could not be read.");
-    }
-    name = name.replace(/[\\/\r\n\0]/g, "_").trim().slice(-150);
-    if (!name) fail(400, "A file name is required.");
+    const name = uploadName(request, "");
     const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-    const type = Object.hasOwn(UPLOAD_TYPES, extension) ? UPLOAD_TYPES[extension] : null;
-    if (!type) fail(415, "Upload a PDF, PNG, JPEG, WebP, Word, Excel, PowerPoint, CSV or ZIP file.");
-    const data = await readRaw(request, MAX_UPLOAD);
-    if (!data.length) fail(400, "The file is empty.");
-    if (!type.check(data)) fail(415, `This file does not look like a real .${extension} file.`);
-    const storedName = `${randomBytes(16).toString("hex")}.${extension}`;
-    await writeFile(join(filesDir, storedName), data, { flag: "wx" });
-    const id = insert("files", { stored_name: storedName, original_name: name, mime: type.mime, size: data.length });
-    return [201, { file: { id, original_name: name, mime: type.mime, size: data.length } }];
+    if (!Object.hasOwn(UPLOAD_TYPES, extension)) fail(415, "Upload a PDF, PNG, JPEG, WebP, Word, Excel, PowerPoint, CSV or ZIP file.");
+    const stored = await storeFile(name, await readRaw(request, MAX_UPLOAD), UPLOAD_TYPES);
+    return [201, { file: stored }];
   });
 
   // ---------- Downloadable material ----------
 
   const MATERIAL_SELECT = `
     SELECT m.id, m.title, m.description, m.audience, m.product_id, lp.name AS product,
-           f.original_name AS file_name, f.mime AS file_mime, f.size AS file_size, m.created_at
+           f.original_name AS file_name, f.mime AS file_mime, f.size AS file_size, m.created_at,
+           (SELECT COUNT(*) FROM material_recipients r WHERE r.material_id = m.id) AS recipient_count
     FROM materials m JOIN files f ON f.id = m.file_id LEFT JOIN products lp ON lp.id = m.product_id`;
 
-  // Material follows its audience, and material attached to a product is hidden wherever that
-  // product is hidden, so the region flag governs both.
+  // Who may see a material: its audience (distributors, dealers or both); within that, only the
+  // named accounts when the admin picked any; and, when it is linked to a product, only where
+  // that product is visible, so the region flag governs both.
   function materialScope(user) {
     if (user.role === "admin") return { where: "1 = 1", params: [] };
     const products = productScope(user);
     return {
-      where: `m.audience IN ('all', ?) AND (m.product_id IS NULL OR EXISTS (SELECT 1 FROM products p WHERE p.id = m.product_id AND ${products.where}))`,
-      params: [user.role, ...products.params],
+      where: `m.audience IN ('all', ?)
+        AND (NOT EXISTS (SELECT 1 FROM material_recipients r WHERE r.material_id = m.id)
+             OR EXISTS (SELECT 1 FROM material_recipients r WHERE r.material_id = m.id AND r.user_id = ?))
+        AND (m.product_id IS NULL OR EXISTS (SELECT 1 FROM products p WHERE p.id = m.product_id AND ${products.where}))`,
+      params: [user.role, user.id, ...products.params],
     };
   }
   const CONTENT_ROLES = ["admin", "distributor", "dealer"];
 
+  function withRecipients(materials) {
+    if (!materials.length) return materials;
+    const rows = groupBy(all(`SELECT r.material_id, u.id, u.name, u.role FROM material_recipients r JOIN users u ON u.id = r.user_id
+      WHERE r.material_id IN (${placeholders(materials)}) ORDER BY u.name COLLATE NOCASE`, ...materials.map((m) => m.id)), "material_id");
+    return materials.map((m) => ({ ...m, recipients: (rows.get(m.id) ?? []).map(({ id, name, role }) => ({ id, name, role })) }));
+  }
+
   route("GET", "/materials", CONTENT_ROLES, ({ user }) => {
     const scope = materialScope(user);
-    return [200, { materials: all(`${MATERIAL_SELECT} WHERE ${scope.where} ORDER BY m.created_at DESC, m.id DESC`, ...scope.params) }];
+    const rows = all(`${MATERIAL_SELECT} WHERE ${scope.where} ORDER BY m.created_at DESC, m.id DESC`, ...scope.params);
+    // Partners are not shown who else a material went to.
+    return [200, { materials: user.role === "admin" ? withRecipients(rows) : rows.map(({ recipient_count: _, ...rest }) => rest) }];
   });
 
   route("GET", "/materials/:id/download", CONTENT_ROLES, ({ user, params, response }) => {
@@ -632,7 +676,7 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     sendFile(response, file, { download: true });
   });
 
-  function materialFields(body, partial) {
+  function materialFields(body, partial, existing) {
     const fields = {};
     if (!partial || "title" in body) fields.title = text(body.title, "Title", 2, 120);
     if ("description" in body) fields.description = text(body.description, "Description", 0, 2000);
@@ -645,19 +689,60 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
       fields.file_id = optionalId(body.file_id, "File");
       if (!fields.file_id || !one("SELECT id FROM files WHERE id = ?", fields.file_id)) fail(400, "Upload a file for this material.");
     }
-    return fields;
+    // Recipients narrow the audience to named accounts, so each must hold the audience's role.
+    const audience = fields.audience ?? existing?.audience;
+    let recipientIds;
+    if ("recipient_ids" in body || (partial && "audience" in body)) {
+      recipientIds = audience === "all" ? [] : idList(body.recipient_ids, "Recipient");
+      if (recipientIds.length && count(`SELECT COUNT(*) AS n FROM users WHERE id IN (${placeholders(recipientIds)}) AND role = ?`, ...recipientIds, audience) !== recipientIds.length) {
+        fail(400, `Every selected recipient must be a ${audience}.`);
+      }
+    }
+    return { fields, recipientIds };
   }
-  const getMaterial = (id) => one(`${MATERIAL_SELECT} WHERE m.id = ?`, id);
+  function setRecipients(materialId, userIds) {
+    run("DELETE FROM material_recipients WHERE material_id = ?", materialId);
+    for (const userId of userIds) run("INSERT INTO material_recipients (material_id, user_id) VALUES (?, ?)", materialId, userId);
+  }
+  const getMaterial = (id) => withRecipients([one(`${MATERIAL_SELECT} WHERE m.id = ?`, id)])[0];
 
-  route("POST", "/materials", ["admin"], async ({ request }) => [201, { material: getMaterial(insert("materials", materialFields(await readJson(request), false))) }]);
+  // Everyone who can now see a material, found with the same rule the listing uses.
+  function materialAudience(materialId) {
+    const candidates = all("SELECT * FROM users WHERE active = 1 AND role IN ('distributor', 'dealer')");
+    return candidates.filter((candidate) => {
+      const scope = materialScope(candidate);
+      return one(`SELECT 1 AS ok FROM materials m WHERE m.id = ? AND ${scope.where}`, materialId, ...scope.params);
+    });
+  }
+
+  route("POST", "/materials", ["admin"], async ({ request }) => {
+    const { fields, recipientIds } = materialFields(await readJson(request), false);
+    const id = transaction(db, () => {
+      const materialId = insert("materials", fields);
+      setRecipients(materialId, recipientIds ?? []);
+      return materialId;
+    });
+    const material = getMaterial(id);
+    for (const person of materialAudience(id)) notify(emails.materialShared({ name: person.name, email: person.email, title: material.title, description: material.description, portalUrl }));
+    return [201, { material }];
+  });
 
   route("PATCH", "/materials/:id", ["admin"], async ({ request, params }) => {
-    const existing = one("SELECT file_id FROM materials WHERE id = ?", params.id);
+    const existing = one("SELECT * FROM materials WHERE id = ?", params.id);
     if (!existing) fail(404, "Material not found.");
-    const fields = materialFields(await readJson(request), true);
-    update("materials", params.id, fields);
+    const before = new Set(materialAudience(params.id).map((person) => person.id));
+    const { fields, recipientIds } = materialFields(await readJson(request), true, existing);
+    transaction(db, () => {
+      update("materials", params.id, fields);
+      if (recipientIds) setRecipients(params.id, recipientIds);
+    });
     if (fields.file_id && fields.file_id !== existing.file_id) await removeFileIfUnused(existing.file_id);
-    return [200, { material: getMaterial(params.id) }];
+    const material = getMaterial(params.id);
+    // Only people who could not see it before are told about it.
+    for (const person of materialAudience(params.id)) {
+      if (!before.has(person.id)) notify(emails.materialShared({ name: person.name, email: person.email, title: material.title, description: material.description, portalUrl }));
+    }
+    return [200, { material }];
   });
 
   route("DELETE", "/materials/:id", ["admin"], async ({ params }) => {
@@ -701,8 +786,18 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     return fields;
   }
   const getScheme = (id) => shapeScheme(one(`${SCHEME_SELECT} WHERE sc.id = ?`, id));
+  const period = ({ starts_on: starts, ends_on: ends }) => (starts && ends ? `${starts} to ${ends}` : starts ? `From ${starts}` : ends ? `Until ${ends}` : "Ongoing");
 
-  route("POST", "/schemes", ["admin"], async ({ request }) => [201, { scheme: getScheme(insert("schemes", schemeFields(await readJson(request), false))) }]);
+  route("POST", "/schemes", ["admin"], async ({ request }) => {
+    const scheme = getScheme(insert("schemes", schemeFields(await readJson(request), false)));
+    if (scheme.active && scheme.status !== "expired") {
+      const roles = scheme.audience === "all" ? PARTNER_ROLES : [scheme.audience];
+      for (const person of all(`SELECT name, email FROM users WHERE active = 1 AND role IN (${placeholders(roles)})`, ...roles)) {
+        notify(emails.schemePublished({ name: person.name, email: person.email, title: scheme.title, description: scheme.description, period: period(scheme), portalUrl }));
+      }
+    }
+    return [201, { scheme }];
+  });
 
   route("PATCH", "/schemes/:id", ["admin"], async ({ request, params }) => {
     const existing = one("SELECT * FROM schemes WHERE id = ?", params.id);
@@ -716,85 +811,6 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     return [200, { ok: true }];
   });
 
-  // ---------- Orders ----------
-
-  const ORDER_SELECT = `
-    SELECT o.id, o.distributor_id, d.name AS distributor, d.organisation AS distributor_organisation,
-           s.name AS state, o.status, o.notes, o.total, o.created_at, o.updated_at,
-           (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id) AS item_count
-    FROM orders o JOIN users d ON d.id = o.distributor_id LEFT JOIN states s ON s.id = d.state_id`;
-
-  // Distributors see their own orders; area sales managers see the orders of the distributors
-  // assigned to them; admins see every order.
-  function orderScope(user) {
-    if (user.role === "admin") return { where: "1 = 1", params: [] };
-    if (user.role === "distributor") return { where: "o.distributor_id = ?", params: [user.id] };
-    return { where: "d.sales_manager_id = ?", params: [user.id] };
-  }
-  const ORDER_ROLES = ["admin", "distributor", "sales"];
-  function scopedOrder(user, id) {
-    const scope = orderScope(user);
-    return one(`${ORDER_SELECT} WHERE o.id = ? AND ${scope.where}`, id, ...scope.params);
-  }
-  const orderWithItems = (order) => ({
-    ...order,
-    items: all("SELECT id, product_id, product_name, product_code, quantity, unit_price, quantity * unit_price AS line_total FROM order_items WHERE order_id = ? ORDER BY id", order.id),
-  });
-
-  route("GET", "/orders", ORDER_ROLES, ({ user, query }) => {
-    const scope = orderScope(user);
-    const status = query.get("status");
-    const filter = status && ORDER_STATUSES.includes(status) ? "AND o.status = ?" : "";
-    const params = filter ? [...scope.params, status] : scope.params;
-    return [200, { orders: all(`${ORDER_SELECT} WHERE ${scope.where} ${filter} ORDER BY o.id DESC`, ...params) }];
-  });
-
-  route("GET", "/orders/:id", ORDER_ROLES, ({ user, params }) => {
-    const order = scopedOrder(user, params.id);
-    if (!order) fail(404, "Order not found.");
-    return [200, { order: orderWithItems(order) }];
-  });
-
-  route("POST", "/orders", ["distributor"], async ({ request, user }) => {
-    const body = await readJson(request);
-    if (!Array.isArray(body.items) || !body.items.length) fail(400, "Add at least one product to the order.");
-    if (body.items.length > MAX_ORDER_LINES) fail(400, `An order can hold up to ${MAX_ORDER_LINES} products.`);
-    const quantities = new Map();
-    for (const item of body.items) {
-      const productId = optionalId(item?.product_id, "Product");
-      if (!productId || !Number.isInteger(item.quantity) || item.quantity < 1) fail(400, "Each line needs a product and a quantity of at least 1.");
-      quantities.set(productId, (quantities.get(productId) ?? 0) + item.quantity);
-    }
-    for (const quantity of quantities.values()) if (quantity > MAX_QUANTITY) fail(400, `Quantities can be at most ${MAX_QUANTITY.toLocaleString("en-IN")} per product.`);
-    const notes = text(body.notes, "Notes", 0, 1000);
-
-    // Prices come from the database at the moment of ordering; the client never sends one.
-    const orderId = transaction(db, () => {
-      const lines = [...quantities].map(([productId, quantity]) => {
-        const product = visibleProduct(user, productId);
-        if (!product) fail(400, "One of these products is no longer available. Please refresh the catalogue.");
-        return { product, quantity };
-      });
-      const total = lines.reduce((sum, { product, quantity }) => sum + product.distributor_price * quantity, 0);
-      const id = insert("orders", { distributor_id: user.id, notes, total });
-      for (const { product, quantity } of lines) {
-        insert("order_items", { order_id: id, product_id: product.id, product_name: product.name, product_code: product.code, quantity, unit_price: product.distributor_price });
-      }
-      return id;
-    });
-    return [201, { order: orderWithItems(scopedOrder(user, orderId)) }];
-  });
-
-  route("PATCH", "/orders/:id", ["admin", "distributor"], async ({ request, user, params }) => {
-    const order = scopedOrder(user, params.id);
-    if (!order) fail(404, "Order not found.");
-    const status = oneOf((await readJson(request)).status, ORDER_STATUSES, "Choose a valid order status.");
-    // A distributor can withdraw an order only until ESKAY has confirmed it.
-    if (user.role === "distributor" && (status !== "cancelled" || order.status !== "placed")) fail(403, "An order can only be cancelled before ESKAY confirms it.");
-    update("orders", params.id, { status }, { touch: true });
-    return [200, { order: orderWithItems(scopedOrder(user, params.id)) }];
-  });
-
   // ---------- Own network ----------
 
   route("GET", "/my/dealers", ["distributor"], ({ user }) => [200, {
@@ -802,12 +818,18 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
   }]);
 
   route("GET", "/my/distributors", ["sales"], ({ user }) => [200, {
-    distributors: all(`${USER_SELECT} WHERE u.role = 'distributor' AND u.active = 1 AND u.sales_manager_id = ? ORDER BY u.name COLLATE NOCASE`, user.id).map((row) => ({
-      ...contact(row),
-      open_orders: count(`SELECT COUNT(*) AS n FROM orders WHERE distributor_id = ? AND status IN ${OPEN_STATUSES}`, row.id),
-      orders: count("SELECT COUNT(*) AS n FROM orders WHERE distributor_id = ?", row.id),
-    })),
+    distributors: all(`${USER_SELECT} WHERE u.role = 'distributor' AND u.active = 1 AND u.sales_manager_id = ? ORDER BY u.name COLLATE NOCASE`, user.id)
+      .map((row) => ({ ...contact(row), dealer_count: row.dealer_count })),
   }]);
+
+  // A partner's picture is visible to the partners linked to them, and to admins.
+  route("GET", "/contacts/:id/avatar", ["distributor", "dealer", "sales"], ({ user, params, response }) => {
+    const linked = one(`SELECT 1 AS ok FROM users c WHERE c.id = ? AND c.active = 1 AND (
+        (? = 'distributor' AND c.distributor_id = ?) OR (? = 'dealer' AND c.id = ?) OR (? = 'sales' AND c.sales_manager_id = ?))`,
+      params.id, user.role, user.id, user.role, user.distributor_id ?? -1, user.role, user.id);
+    if (!linked) fail(404, "No profile picture.");
+    serveAvatar(response, params.id);
+  });
 
   // ---------- Users ----------
 
@@ -837,15 +859,28 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     const role = fields.role ?? existing.role;
     const stateId = "state_id" in fields ? fields.state_id : existing?.state_id;
     if (stateId && !one("SELECT id FROM states WHERE id = ?", stateId)) fail(400, "The selected state no longer exists.");
-    if ((role === "distributor" || role === "dealer") && !stateId) fail(400, "Distributors and dealers must have a state, which decides their regional catalogue.");
-    // Each link only makes sense for one role, so it is cleared for every other role.
+    if (PARTNER_ROLES.includes(role) && !stateId) fail(400, "Distributors and dealers must have a state, which decides their regional catalogue.");
+    // Each link only makes sense for one role, so it is cleared for every other role. A dealer
+    // must always be assigned to a distributor.
     if (role !== "dealer") fields.distributor_id = null;
-    else if (fields.distributor_id && !one("SELECT id FROM users WHERE id = ? AND role = 'distributor'", fields.distributor_id)) fail(400, "Assign the dealer to an existing distributor.");
+    else {
+      const distributorId = "distributor_id" in fields ? fields.distributor_id : existing?.distributor_id;
+      if (!distributorId) fail(400, "Choose the distributor this dealer is assigned to.");
+      if (!one("SELECT id FROM users WHERE id = ? AND role = 'distributor' AND active = 1", distributorId)) fail(400, "Assign the dealer to an active distributor.");
+    }
     if (role !== "distributor") fields.sales_manager_id = null;
     else if (fields.sales_manager_id && !one("SELECT id FROM users WHERE id = ? AND role = 'sales'", fields.sales_manager_id)) fail(400, "Assign the distributor to an existing area sales manager.");
     return fields;
   }
   const userConflict = (error) => (isUniqueViolation(error) ? fail(409, "An account with this email already exists.") : Promise.reject(error));
+
+  function announceAssignment(dealerId) {
+    const dealer = getUser(dealerId);
+    const distributor = dealer?.distributor_id && getUser(dealer.distributor_id);
+    if (!dealer?.active || !distributor?.active) return;
+    notify(emails.dealerAssignedToDistributor({ distributor, dealer, portalUrl }));
+    notify(emails.distributorAssignedToDealer({ dealer, distributor, portalUrl }));
+  }
 
   route("POST", "/users", ["admin"], async ({ request }) => {
     const body = await readJson(request);
@@ -860,8 +895,11 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     } catch (error) {
       return userConflict(error);
     }
+    const user = getUser(id);
+    notify(emails.accountCreated({ name: user.name, email: user.email, role: user.role, password, portalUrl }));
+    if (user.role === "dealer") notify(emails.dealerAssignedToDistributor({ distributor: getUser(user.distributor_id), dealer: user, portalUrl }));
     // A generated password is returned exactly once, here, so the admin can pass it on.
-    return [201, { user: getUser(id), ...(supplied ? {} : { temporary_password: password }) }];
+    return [201, { user, email_sent: mailer.enabled, ...(supplied ? {} : { temporary_password: password }) }];
   });
 
   route("PATCH", "/users/:id", ["admin"], async ({ request, user, params }) => {
@@ -889,17 +927,68 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     } catch (error) {
       return userConflict(error);
     }
-    return [200, { user: getUser(params.id), ...(temporary ? { temporary_password: temporary } : {}) }];
+    const updated = getUser(params.id);
+    if (temporary) notify(emails.passwordReset({ name: updated.name, email: updated.email, password: temporary, portalUrl }));
+    if (updated.role === "dealer" && updated.distributor_id !== existing.distributor_id) announceAssignment(params.id);
+    return [200, { user: updated, email_sent: mailer.enabled, ...(temporary ? { temporary_password: temporary } : {}) }];
+  });
+
+  // ---------- Dashboard ----------
+
+  route("GET", "/dashboard", "*", ({ user }) => {
+    const recentMaterials = (viewer) => {
+      const scope = materialScope(viewer);
+      return all(`${MATERIAL_SELECT} WHERE ${scope.where} ORDER BY m.created_at DESC, m.id DESC LIMIT 3`, ...scope.params).map(({ recipient_count: _, ...rest }) => rest);
+    };
+    const schemesFor = (viewer) => count(`SELECT COUNT(*) AS n FROM schemes sc WHERE ${schemeScope(viewer).where}`, ...schemeScope(viewer).params);
+    const materialsFor = (viewer) => count(`SELECT COUNT(*) AS n FROM materials m WHERE ${materialScope(viewer).where}`, ...materialScope(viewer).params);
+
+    if (user.role === "admin") {
+      return [200, {
+        counts: {
+          products: count("SELECT COUNT(*) AS n FROM products"),
+          active_products: count("SELECT COUNT(*) AS n FROM products WHERE active = 1"),
+          distributors: count("SELECT COUNT(*) AS n FROM users WHERE role = 'distributor' AND active = 1"),
+          dealers: count("SELECT COUNT(*) AS n FROM users WHERE role = 'dealer' AND active = 1"),
+          sales: count("SELECT COUNT(*) AS n FROM users WHERE role = 'sales' AND active = 1"),
+          states: count("SELECT COUNT(*) AS n FROM states WHERE active = 1"),
+          materials: count("SELECT COUNT(*) AS n FROM materials"),
+          schemes: count(`SELECT COUNT(*) AS n FROM schemes sc WHERE sc.active = 1 AND (sc.ends_on IS NULL OR sc.ends_on >= ${TODAY_IST})`),
+          awaiting_first_sign_in: count("SELECT COUNT(*) AS n FROM users WHERE active = 1 AND must_change_password = 1 AND role <> 'admin'"),
+        },
+        // Where the partner network sits, state by state, for the dashboard chart.
+        network: all(`SELECT s.id, s.name,
+            COALESCE(SUM(u.role = 'distributor'), 0) AS distributors, COALESCE(SUM(u.role = 'dealer'), 0) AS dealers
+          FROM states s LEFT JOIN users u ON u.state_id = s.id AND u.active = 1 AND u.role IN ('distributor', 'dealer')
+          WHERE s.active = 1 GROUP BY s.id ORDER BY (COALESCE(SUM(u.role = 'distributor'), 0) + COALESCE(SUM(u.role = 'dealer'), 0)) DESC, s.name COLLATE NOCASE`),
+        recent_partners: all(`${USER_SELECT} WHERE u.role IN ('distributor', 'dealer') ORDER BY u.created_at DESC, u.id DESC LIMIT 5`).map(shapeUser),
+        region_filter: regionFilterOn() ? "on" : "off",
+      }];
+    }
+    if (user.role === "sales") {
+      const distributors = all(`${USER_SELECT} WHERE u.role = 'distributor' AND u.active = 1 AND u.sales_manager_id = ? ORDER BY u.name COLLATE NOCASE`, user.id);
+      return [200, {
+        counts: { distributors: distributors.length, dealers: distributors.reduce((sum, row) => sum + row.dealer_count, 0) },
+        distributors: distributors.slice(0, 6).map((row) => ({ ...contact(row), dealer_count: row.dealer_count })),
+      }];
+    }
+    const counts = { products: visibleProducts(user).length, schemes: schemesFor(user), materials: materialsFor(user) };
+    if (user.role === "dealer") {
+      const distributor = user.distributor_id ? one(`${USER_SELECT} WHERE u.id = ? AND u.active = 1`, user.distributor_id) : null;
+      return [200, { counts, distributor: distributor ? contact(distributor) : null, recent_materials: recentMaterials(user) }];
+    }
+    const dealers = all(`${USER_SELECT} WHERE u.role = 'dealer' AND u.active = 1 AND u.distributor_id = ? ORDER BY u.created_at DESC, u.id DESC`, user.id);
+    return [200, { counts: { ...counts, dealers: dealers.length }, dealers: dealers.slice(0, 5).map(contact), recent_materials: recentMaterials(user) }];
   });
 
   // ---------- Settings ----------
 
-  route("GET", "/settings", ["admin"], () => [200, { settings: { region_filter: regionFilterOn() ? "on" : "off" } }]);
+  route("GET", "/settings", ["admin"], () => [200, { settings: { region_filter: regionFilterOn() ? "on" : "off" }, email_enabled: mailer.enabled }]);
 
   route("PATCH", "/settings", ["admin"], async ({ request }) => {
     const body = await readJson(request);
     if ("region_filter" in body) run("UPDATE settings SET value = ? WHERE key = 'region_filter'", oneOf(body.region_filter, ["on", "off"], "The region filter must be on or off."));
-    return [200, { settings: { region_filter: regionFilterOn() ? "on" : "off" } }];
+    return [200, { settings: { region_filter: regionFilterOn() ? "on" : "off" }, email_enabled: mailer.enabled }];
   });
 
   // ---------- Request handling ----------
@@ -962,5 +1051,5 @@ export function createPortal({ db, filesDir, origins, now = () => Date.now() }) 
     }
   }
 
-  return { handle, sweepOrphanFiles, sweepFailures };
+  return { handle, sweepOrphanFiles, sweepFailures, flushMail };
 }

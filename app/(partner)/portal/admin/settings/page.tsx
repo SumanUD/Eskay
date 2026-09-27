@@ -16,15 +16,15 @@ export default function AdminSettingsPage() {
 }
 
 function AdminSettings() {
-  const { data, error, loading, reload } = useApi<{ settings: Settings }>("/settings");
+  const { data, error, loading, reload } = useApi<{ settings: Settings; email_enabled: boolean }>("/settings");
   const [state, setState] = useState<{ busy: boolean; tone?: "success" | "error"; text?: string }>({ busy: false });
 
   async function setRegionFilter(value: "on" | "off") {
-    if (value === "on" && !window.confirm("Switch the regional catalogue on? Distributors and dealers will immediately see only the products flagged for their state.")) return;
+    if (value === "on" && !window.confirm("Switch regional products on? Distributors and dealers will immediately see only the products released in their state.")) return;
     setState({ busy: true });
     try {
       await api("/settings", { method: "PATCH", body: { region_filter: value } });
-      setState({ busy: false, tone: "success", text: `Regional catalogue switched ${value}.` });
+      setState({ busy: false, tone: "success", text: `Regional products switched ${value}.` });
       reload();
     } catch (failure) {
       setState({ busy: false, tone: "error", text: (failure as Error).message });
@@ -41,13 +41,13 @@ function AdminSettings() {
       {data && (
         <section className="p-card p-setting">
           <div>
-            <h2 className="p-card-title">Regional catalogue</h2>
+            <h2 className="p-card-title">Regional products</h2>
             <p className="p-plain">
-              Every product carries a region flag: the states it is released in. While this is <strong>off</strong>, the flags are recorded but every
-              distributor and dealer sees every active product. Switch it <strong>on</strong> and each partner sees only the products flagged for their
+              Every product records the states it is released in. While this is <strong>off</strong>, that region is recorded but every
+              distributor and dealer sees every active product. Switch it <strong>on</strong> and each partner sees only the products released in their
               own state; material linked to a product follows the same rule. Admins always see everything.
             </p>
-            <p className="p-plain p-muted">Before switching on, check that every distributor and dealer has the right state, and every product the right flags.</p>
+            <p className="p-plain p-muted">Before switching on, check that every distributor and dealer has the right state, and every product the right region.</p>
           </div>
           <div className="p-setting-control">
             <span className={on ? "p-badge is-ok" : "p-badge is-muted"}>{on ? "On" : "Off"}</span>
@@ -58,6 +58,20 @@ function AdminSettings() {
         </section>
       )}
       {state.text && <Notice tone={state.tone}>{state.text}</Notice>}
+      {data && (
+        <section className="p-card p-setting">
+          <div>
+            <h2 className="p-card-title">Email notifications</h2>
+            <p className="p-plain">
+              The portal emails partners when their account is created or their password is reset, tells a distributor and dealer when they are
+              linked to each other, and lets partners know when new material or a scheme is shared with them.
+            </p>
+          </div>
+          <div className="p-setting-control">
+            <span className={data.email_enabled ? "p-badge is-ok" : "p-badge is-warn"}>{data.email_enabled ? "Sending" : "Not configured"}</span>
+          </div>
+        </section>
+      )}
     </>
   );
 }

@@ -9,23 +9,22 @@ import { ROLE_LABEL } from "./format";
 import { Icon, type PortalIconName } from "./icons";
 import { SessionContext } from "./session";
 import type { Role, User } from "./types";
-import { Field, Loading, Notice } from "./ui";
+import { Avatar, Field, Loading, Notice } from "./ui";
 
 type NavItem = { href: string; label: string; icon: PortalIconName; also?: string[] };
 type NavGroup = { title?: string; items: NavItem[] };
 
-// Each role's menu lists exactly its entitlements from the access brief, grouped by what the
-// person is doing: their day-to-day work first, reference material and administration after.
+// Each role's menu lists exactly its entitlements, grouped by what the person is doing: their
+// day-to-day work first, reference material and administration after. There are no orders:
+// tobacco products are not sold or promoted online, so the portal carries information only.
 const NAV: Record<Role, NavGroup[]> = {
   admin: [
     { items: [
       { href: "/portal", label: "Dashboard", icon: "dashboard" },
-      { href: "/portal/catalogue", label: "Catalogue", icon: "catalogue", also: ["/portal/product"] },
-      { href: "/portal/orders", label: "Orders", icon: "orders", also: ["/portal/order"] },
     ] },
     { title: "Manage", items: [
-      { href: "/portal/admin/products", label: "Products", icon: "box" },
-      { href: "/portal/admin/users", label: "Users", icon: "people" },
+      { href: "/portal/admin/products", label: "Products", icon: "box", also: ["/portal/product"] },
+      { href: "/portal/admin/users", label: "Partners & users", icon: "people" },
       { href: "/portal/admin/states", label: "States", icon: "pin" },
       { href: "/portal/admin/schemes", label: "Schemes", icon: "tag" },
       { href: "/portal/admin/materials", label: "Materials", icon: "download" },
@@ -35,9 +34,7 @@ const NAV: Record<Role, NavGroup[]> = {
   distributor: [
     { items: [
       { href: "/portal", label: "Dashboard", icon: "dashboard" },
-      { href: "/portal/catalogue", label: "Catalogue", icon: "catalogue", also: ["/portal/product"] },
-      { href: "/portal/orders/new", label: "Place order", icon: "cart" },
-      { href: "/portal/orders", label: "My orders", icon: "orders", also: ["/portal/order"] },
+      { href: "/portal/products", label: "Products", icon: "box", also: ["/portal/product"] },
       { href: "/portal/dealers", label: "My dealers", icon: "people" },
     ] },
     { title: "Resources", items: [
@@ -47,8 +44,8 @@ const NAV: Record<Role, NavGroup[]> = {
   ],
   dealer: [
     { items: [
-      { href: "/portal", label: "Overview", icon: "dashboard" },
-      { href: "/portal/catalogue", label: "Catalogue", icon: "catalogue", also: ["/portal/product"] },
+      { href: "/portal", label: "Dashboard", icon: "dashboard" },
+      { href: "/portal/products", label: "Products", icon: "box", also: ["/portal/product"] },
     ] },
     { title: "Resources", items: [
       { href: "/portal/schemes", label: "Schemes", icon: "tag" },
@@ -58,18 +55,20 @@ const NAV: Record<Role, NavGroup[]> = {
   sales: [
     { items: [
       { href: "/portal", label: "Dashboard", icon: "dashboard" },
-      { href: "/portal/orders", label: "Area orders", icon: "orders", also: ["/portal/order"] },
       { href: "/portal/distributors", label: "My distributors", icon: "truck" },
     ] },
   ],
 };
 
-export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(null);
+  const [avatarVersion, setAvatarVersion] = useState(0);
+  const setUser = useCallback((next: User) => {
+    setUserState(next);
+    setAvatarVersion((current) => current + 1);
+  }, []);
   const [loadError, setLoadError] = useState("");
   // Remembers the page the menu was opened on, so navigating closes it without an effect.
   const [menuOpenOn, setMenuOpenOn] = useState<string | null>(null);
@@ -96,7 +95,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       live = false;
       window.removeEventListener(SIGNED_OUT_EVENT, goToSignIn);
     };
-  }, [goToSignIn]);
+  }, [goToSignIn, setUser]);
 
   const signOut = useCallback(async () => {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -104,7 +103,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   }, [router]);
 
-  const session = useMemo(() => (user ? { user, setUser, signOut } : null), [user, signOut]);
+  const session = useMemo(() => (user ? { user, setUser, signOut, avatarVersion } : null), [user, setUser, signOut, avatarVersion]);
 
   if (loadError) {
     return (
@@ -130,7 +129,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="p-whoami">
-            <span className="p-avatar" aria-hidden="true">{initials(me.name)}</span>
+            <Avatar name={me.name} hasAvatar={me.has_avatar} source="me" version={session.avatarVersion} />
             <div>
               <strong>{me.name}</strong>
               <span>{ROLE_LABEL[me.role]}</span>

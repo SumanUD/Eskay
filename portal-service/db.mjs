@@ -127,6 +127,40 @@ const migrations = [
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   INSERT INTO settings (key, value) VALUES ('region_filter', 'off');
   `,
+
+  // v2: the portal takes no orders (tobacco products fall under COTPA), accounts gain a profile
+  // picture, and downloadable material can be addressed to named distributors or dealers.
+  `
+  DROP TABLE order_items;
+  DROP TABLE orders;
+
+  ALTER TABLE users ADD COLUMN avatar_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL;
+
+  -- No rows for a material means everyone in its audience; rows narrow it to those accounts.
+  CREATE TABLE material_recipients (
+    material_id INTEGER NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (material_id, user_id)
+  );
+  CREATE INDEX material_recipients_user ON material_recipients(user_id);
+
+  -- Fields from the product master that every role sees alike, alongside each role's own price.
+  ALTER TABLE products ADD COLUMN brand TEXT NOT NULL DEFAULT '';
+  ALTER TABLE products ADD COLUMN mrp INTEGER CHECK (mrp IS NULL OR mrp >= 0);
+  ALTER TABLE products ADD COLUMN retail_price INTEGER CHECK (retail_price IS NULL OR retail_price >= 0);
+
+  -- A product can now carry several photographs in display order; the first is its cover.
+  -- products.image_file_id is superseded by this table and left empty.
+  CREATE TABLE product_images (
+    id INTEGER PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    file_id INTEGER NOT NULL REFERENCES files(id),
+    position INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX product_images_product ON product_images(product_id, position);
+  INSERT INTO product_images (product_id, file_id, position) SELECT id, image_file_id, 0 FROM products WHERE image_file_id IS NOT NULL;
+  UPDATE products SET image_file_id = NULL;
+  `,
 ];
 
 export function openDatabase(path) {

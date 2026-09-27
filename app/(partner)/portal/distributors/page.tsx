@@ -16,10 +16,10 @@ function Distributors() {
   const { data, error, loading } = useApi<{ distributors: Contact[] }>("/my/distributors");
   return (
     <>
-      <PageHeader title="My distributors" description="Distributors assigned to you, and where their orders stand." />
+      <PageHeader title="My distributors" description="Distributors ESKAY has assigned to you, with how many dealers each supplies." />
       {loading && <Loading />}
       {error && <Notice tone="error">{error}</Notice>}
-      {data && (data.distributors.length ? <ContactTable contacts={data.distributors} orders /> : <EmptyState title="No distributors assigned yet">When ESKAY assigns distributors to you, they will appear here with their orders.</EmptyState>)}
+      {data && (data.distributors.length ? <ContactTable contacts={data.distributors} showDealerCount /> : <EmptyState title="No distributors assigned yet">When ESKAY assigns distributors to you, they will appear here.</EmptyState>)}
     </>
   );
 }

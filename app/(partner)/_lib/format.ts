@@ -1,4 +1,4 @@
-import type { Audience, OrderStatus, Role } from "./types";
+import type { Audience, Role } from "./types";
 
 const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2 });
 
@@ -44,12 +44,4 @@ export const AUDIENCE_LABEL: Record<Audience, string> = {
   all: "Distributors and dealers",
   distributor: "Distributors only",
   dealer: "Dealers only",
-};
-
-export const STATUS_LABEL: Record<OrderStatus, string> = {
-  placed: "Placed",
-  confirmed: "Confirmed",
-  dispatched: "Dispatched",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
 };

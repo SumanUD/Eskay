@@ -4,7 +4,9 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { api } from "./api";
 import type { Role, User } from "./types";
 
-type Session = { user: User; setUser: (user: User) => void; signOut: () => Promise<void> };
+// `avatarVersion` changes whenever the signed-in user is replaced, so a new profile picture is
+// fetched again even though its address stays the same.
+type Session = { user: User; setUser: (user: User) => void; signOut: () => Promise<void>; avatarVersion: number };
 
 export const SessionContext = createContext<Session | null>(null);
 

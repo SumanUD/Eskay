@@ -19,6 +19,17 @@ export function Price({ product }: { product: Product }) {
   );
 }
 
+/** The printed MRP and the retail counter price, which are the same for every partner. */
+export function ShelfPrices({ product }: { product: Pick<Product, "mrp" | "retail_price"> }) {
+  if (product.mrp === null && product.retail_price === null) return null;
+  return (
+    <p className="p-shelf-prices">
+      {product.mrp !== null && <span>MRP <b>{rupees(product.mrp)}</b></span>}
+      {product.retail_price !== null && <span>Retail counter <b>{rupees(product.retail_price)}</b></span>}
+    </p>
+  );
+}
+
 export function MaterialList({ materials }: { materials: Material[] }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState("");
