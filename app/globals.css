@@ -409,9 +409,9 @@ footer { color: #d2cec8; background: radial-gradient(circle at 35% 0, #241c14, t
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(32, 25, 19, 0.15);
+  border: 1px solid rgba(255, 255, 255);
   border-radius: 50%;
-  color: #201913;
+  color: #ffffff;
   background: transparent;
   text-decoration: none;
   transition:
