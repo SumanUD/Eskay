@@ -403,3 +403,32 @@ footer { color: #d2cec8; background: radial-gradient(circle at 35% 0, #241c14, t
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   [data-reveal] { opacity: 1; transform: none; }
 }
+.header-user {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(32, 25, 19, 0.15);
+  border-radius: 50%;
+  color: #201913;
+  background: transparent;
+  text-decoration: none;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease;
+}
+
+.header-user:hover {
+  background: #201913;
+  color: #fff;
+  border-color: #201913;
+  transform: translateY(-1px);
+}
+
+.header-user svg {
+  width: 19px;
+  height: 19px;
+}

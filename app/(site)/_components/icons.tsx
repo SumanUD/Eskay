@@ -39,3 +39,31 @@ export type IconName = keyof typeof paths;
 export function LineIcon({ type }: { type: IconName }) {
   return <svg aria-hidden="true" className="line-icon" viewBox="0 0 24 24">{paths[type]}</svg>;
 }
+
+
+export function UserIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        d="M20 21C20 17.6863 17.3137 15 14 15H10C6.68629 15 4 17.6863 4 21"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle
+        cx="12"
+        cy="7"
+        r="4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}

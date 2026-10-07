@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Arrow } from "./icons";
+import { Arrow, UserIcon } from "./icons";
 import { MenuPartnerLink, PortalChip, usePortalUser } from "./portal-session";
 import { primaryNav, siteNav } from "./site-nav";
 
@@ -101,7 +101,29 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="header-actions">
-            <PortalChip user={portalUser} />
+            
+            <div className="header-actions">
+              {portalUser ? (
+                <PortalChip user={portalUser} />
+              ) : (
+                <Link
+                  className="header-user"
+                  href="/login"
+                  aria-label="Login"
+                  title="Login"
+                >
+                  <UserIcon />
+                </Link>
+              )}
+
+              <Link
+                className="button button-red header-button"
+                href="/contact"
+              >
+                <span>Get in touch</span>
+                <i><Arrow /></i>
+              </Link>
+            </div>
             <Link className="button button-red header-button" href="/contact"><span>Get in touch</span><i><Arrow /></i></Link>
           </div>
           <button className={menuOpen ? "menu-toggle is-open" : "menu-toggle"} type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setOpenOn((current) => (current === pathname ? null : pathname))}>
